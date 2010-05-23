@@ -4,12 +4,12 @@ hbeanstalk
 About
 -----
 
-hbeanstalk is a client for the Beanstalk queue server, see <http://kr.github.com/beanstalkd/>.
+hbeanstalk is a Haskell client for the Beanstalk queue server, see <http://kr.github.com/beanstalkd/>.
 
 Status
 ------
 
-This is just being hacked on in some free minutes as I get them.  Once there is some minimal functionality, I will start to cabal-ize and publish an API.
+This is just being hacked on in some free minutes as I get them.  Once there is some minimal functionality, I will start to cabalize and publish an API.
 
 License
 -------
