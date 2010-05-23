@@ -36,6 +36,8 @@ putJob s priority delay ttr job_body =
                (show ttr) ++ " " ++
                (show job_size) ++ "\r\n")
        send s (job_body ++ "\r\n")
+       status <- readLine s
+       putStrLn status
        return "3"
 
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
@@ -43,7 +45,7 @@ getServerStats s =
     do send s "stats\r\n"
        statHeader <- readLine s
        let bytes = parseStatsLen statHeader
-       (statContent, bytesRead) <- recvLen s bytes
+       (statContent, bytesRead) <- recvLen s (bytes+2)
        yamlN <- parseYaml statContent
        return $ yamlMapToHMap yamlN
 
@@ -81,8 +83,6 @@ parseStatsLen input =
         case (parse statsLenParser "StatsLenParser" input) of
           Right len -> read len
           Left err -> 0
-
-
 
 -- Parser for first line of stats for data length indicator
 statsLenParser :: GenParser Char st String
