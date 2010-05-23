@@ -4,9 +4,10 @@ import Network.BSD
 import Data.List
 import System.IO
 import Text.ParserCombinators.Parsec
+import Data.Yaml.Syck
+import qualified Data.Map as M
 
 type BeanstalkServer = Socket
---data BeanstalkServer = BeanstalkServer {bsHandle :: Handle, bsSocket :: Socket }
 
 connectBeanstalk :: HostName
                  -> String
@@ -30,8 +31,23 @@ stats s =
        statHeader <- readLine s
        putStrLn statHeader
        let bytes = parseStatsLen statHeader
-       recvLen s bytes >>= putStr . show >> putStr "\n"
        hFlush stdout
+       (statContent, bytesRead) <- recvLen s bytes
+       putStr statContent
+       putStr "\n\n\n"
+       yamlN <- parseYaml statContent
+       putStr (show yamlN)
+       let statMap = yamlMapToHMap yamlN
+       putStr "\n\n\n"
+       putStr (show statMap)
+       hFlush stdout
+
+yamlMapToHMap :: YamlNode -> M.Map String String
+yamlMapToHMap y = M.fromList elems where
+    emap = (n_elem y)
+    EMap maplist = emap -- [(YamlNode,YamlNode)]
+    yelems = map (\(x,y) -> (n_elem x, n_elem y))  maplist
+    elems = map (\(EStr x, EStr y) -> (unpackBuf x, unpackBuf y)) yelems
 
 -- Read a single character from socket without handling errors
 readChar :: Socket -> IO Char
