@@ -63,6 +63,12 @@ reserveJob s =
        (jobContent, bytesRead) <- recvLen s (bytes+2)
        return (Job jobid jobContent)
 
+deleteJob :: BeanstalkServer -> String -> IO ()
+deleteJob s jobid =
+    do send s ("delete "++jobid++"\r\n")
+       response <- readLine s
+       putStrLn response
+
 useTube :: BeanstalkServer -> String -> IO ()
 useTube s name =
     do send s ("use "++name++"\r\n");
@@ -141,6 +147,7 @@ main = do bs <- connectBeanstalk "localhost" "8887"
           putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
           rjob <- reserveJob bs
           putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
+          deleteJob bs (job_id rjob)
           useTube bs "hbeanstalk"
           job <- putJob bs 1 0 500 "hello"
           printServerStats bs
