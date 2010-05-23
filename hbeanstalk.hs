@@ -5,39 +5,27 @@ import Data.List
 import System.IO
 import Text.ParserCombinators.Parsec
 
-data BeanstalkServer = BeanstalkServer {bsHandle :: Handle, bsSocket :: Socket }
+type BeanstalkServer = Socket
+--data BeanstalkServer = BeanstalkServer {bsHandle :: Handle, bsSocket :: Socket }
 
 connectBeanstalk :: HostName
                  -> String
                  -> IO BeanstalkServer
 connectBeanstalk hostname port =
-    do -- mostly verbatim from RWH Ch 27 sockets&syslog
-       -- Look up the hostname and port.  Either raises an exception
-       -- or returns a nonempty list.  First element in that list
-       -- is supposed to be the best option.
-      addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
-      let serveraddr = head addrinfos
-      -- Establish a socket for communication
-      sock <- socket (addrFamily serveraddr) Stream defaultProtocol
-      -- Mark the socket for keep-alive handling since it may be idle
-      -- for long periods of time
-      setSocketOption sock KeepAlive 1
-      -- Connect to server
-      connect sock (addrAddress serveraddr)
-      -- Make a Handle out of it for convenience
-      h <- socketToHandle sock ReadWriteMode
-      -- We're going to set buffering to BlockBuffering and then
-      -- explicitly call hFlush after each message, below, so that
-      -- messages get logged immediately
-      hSetBuffering h (BlockBuffering Nothing)
-      -- Save off the socket and server address in a handle
-      return $ BeanstalkServer h sock
+    do addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
+       let serveraddr = head addrinfos
+       -- Establish a socket for communication
+       sock <- socket (addrFamily serveraddr) Stream defaultProtocol
+       -- Mark the socket for keep-alive handling since it may be idle
+       -- for long periods of time
+       setSocketOption sock KeepAlive 1
+       -- Connect to server
+       connect sock (addrAddress serveraddr)
+       return sock
 
 stats :: BeanstalkServer -> IO ()
-stats bss =
-    do let h = bsHandle bss
-       let s = bsSocket bss
-       send s "stats\r\n"
+stats s =
+    do send s "stats\r\n"
 --       recv s 800 >>= print
        statHeader <- readLine s
        putStrLn statHeader
