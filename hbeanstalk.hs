@@ -40,6 +40,12 @@ putJob s priority delay ttr job_body =
        putStrLn status
        return "3"
 
+useTube :: BeanstalkServer -> String -> IO ()
+useTube s name =
+    do send s ("use "++name++"\r\n");
+       response <- readLine s
+       putStrLn response
+
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats s =
     do send s "stats\r\n"
@@ -91,5 +97,6 @@ statsLenParser = char 'O' >> char 'K' >> char ' ' >> many1 digit
 -- Testing
 main = do bs <- connectBeanstalk "localhost" "8887"
           printServerStats bs
+          useTube bs "hbeanstalk"
           job <- putJob bs 1 0 500 "hello"
           putStrLn "exiting"
