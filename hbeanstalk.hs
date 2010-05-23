@@ -8,6 +8,7 @@ import Data.Yaml.Syck
 import qualified Data.Map as M
 
 type BeanstalkServer = Socket
+type JobID = String
 
 connectBeanstalk :: HostName
                  -> String
@@ -23,6 +24,19 @@ connectBeanstalk hostname port =
        -- Connect to server
        connect sock (addrAddress serveraddr)
        return sock
+
+-- put <pri> <delay> <ttr> <bytes>\r\n
+-- <data>\r\n
+putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO JobID
+putJob s priority delay ttr job_body =
+    do let job_size = length job_body
+       send s ("put " ++
+               (show priority) ++ " " ++
+               (show delay) ++ " " ++
+               (show ttr) ++ " " ++
+               (show job_size) ++ "\r\n")
+       send s (job_body ++ "\r\n")
+       return "3"
 
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats s =
@@ -77,3 +91,5 @@ statsLenParser = char 'O' >> char 'K' >> char ' ' >> many1 digit
 -- Testing
 main = do bs <- connectBeanstalk "localhost" "8887"
           printServerStats bs
+          job <- putJob bs 1 0 500 "hello"
+          putStrLn "exiting"
