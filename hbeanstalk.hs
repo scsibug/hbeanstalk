@@ -8,7 +8,9 @@ import Data.Yaml.Syck
 import qualified Data.Map as M
 
 type BeanstalkServer = Socket
-type JobID = String
+
+data Job = Job {job_id :: String,
+                job_body :: String}
 
 connectBeanstalk :: HostName
                  -> String
@@ -27,7 +29,7 @@ connectBeanstalk hostname port =
 
 -- put <pri> <delay> <ttr> <bytes>\r\n
 -- <data>\r\n
-putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO JobID
+putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO String
 putJob s priority delay ttr job_body =
     do let job_size = length job_body
        send s ("put " ++
@@ -39,6 +41,15 @@ putJob s priority delay ttr job_body =
        status <- readLine s
        putStrLn status
        return "3"
+
+reserveJob :: BeanstalkServer -> IO Job
+reserveJob s =
+    do send s "reserve\r\n"
+       response <- readLine s
+       putStrLn response
+       let (jobid, bytes) = parseReserve response
+       (jobContent, bytesRead) <- recvLen s (bytes+2)
+       return (Job jobid jobContent)
 
 useTube :: BeanstalkServer -> String -> IO ()
 useTube s name =
@@ -84,6 +95,27 @@ readLine s =
                            else do l <- readLine s
                                    return (c:l)
 
+-- Get Job ID and size
+parseReserve :: String -> (String,Int)
+parseReserve input =
+    case (parse reservedParser "ReservedParser" input) of
+      Right (x,y) -> (x, read y)
+      Left err -> ("",0)
+
+reservedParser :: GenParser Char st (String,String)
+reservedParser = do reservedSymParser
+                    char ' '
+                    x <- digitsParser
+                    char ' '
+                    y <- digitsParser
+                    return (x,y)
+
+reservedSymParser :: GenParser Char st String
+reservedSymParser = string "RESERVED"
+
+digitsParser :: GenParser Char st String
+digitsParser = many1 digit
+
 parseStatsLen :: String -> Int
 parseStatsLen input =
         case (parse statsLenParser "StatsLenParser" input) of
@@ -97,6 +129,9 @@ statsLenParser = char 'O' >> char 'K' >> char ' ' >> many1 digit
 -- Testing
 main = do bs <- connectBeanstalk "localhost" "8887"
           printServerStats bs
+          rjob <- reserveJob bs
+          putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
           useTube bs "hbeanstalk"
           job <- putJob bs 1 0 500 "hello"
+
           putStrLn "exiting"
