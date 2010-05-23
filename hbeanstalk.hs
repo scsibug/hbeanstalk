@@ -4,7 +4,6 @@ import Network.BSD
 import Data.List
 import System.IO
 import Text.ParserCombinators.Parsec
-import Data.Either
 
 data BeanstalkServer = BeanstalkServer {bsHandle :: Handle, bsSocket :: Socket }
 
@@ -23,8 +22,6 @@ connectBeanstalk hostname port =
       -- Mark the socket for keep-alive handling since it may be idle
       -- for long periods of time
       setSocketOption sock KeepAlive 1
-      -- We will want to read from this socket, set max msg queue to 5
-      --listen sock 5
       -- Connect to server
       connect sock (addrAddress serveraddr)
       -- Make a Handle out of it for convenience
@@ -40,20 +37,29 @@ stats :: BeanstalkServer -> IO ()
 stats bss =
     do let h = bsHandle bss
        let s = bsSocket bss
-       hPutStrLn h "stats\r\n" >> hFlush h
-       statHeader <- hGetLine h
+       send s "stats\r\n"
+--       recv s 800 >>= print
+       statHeader <- readLine s
        putStrLn statHeader
        let bytes = parseStatsLen statHeader
-       putStrLn (show bytes)
---       cont <- hGetContents h
---       putStrLn cont
-       (output, bytesread, sa) <- recvFrom s (bytes+2)
-       output <- return "blah"
---       hSetBuffering stdout NoBuffering
-       putStrLn "test"
-       putStrLn output
+       recvLen s bytes >>= putStr . show >> putStr "\n"
        hFlush stdout
 
+-- Read a single character from socket without handling errors
+readChar :: Socket -> IO Char
+readChar s = recv s 1 >>= return . head
+
+-- Read up to and including a newline.  Any errors result in a string
+-- starting with "Error: "
+readLine :: Socket -> IO String
+readLine s =
+    catch readLine' (\err -> return ("Error: " ++ show err))
+        where
+          readLine' = do c <- readChar s
+                         if c == '\n'
+                           then return ""
+                           else do l <- readLine s
+                                   return (c:l)
 
 parseStatsLen :: String -> Int
 parseStatsLen input =
@@ -66,3 +72,7 @@ parseStatsLen input =
 -- Parser for first line of stats for data length indicator
 statsLenParser :: GenParser Char st String
 statsLenParser = char 'O' >> char 'K' >> char ' ' >> many1 digit
+
+-- Testing
+main = do bs <- connectBeanstalk "localhost" "8887"
+          stats bs
