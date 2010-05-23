@@ -124,14 +124,18 @@ parseStatsLen input =
 
 -- Parser for first line of stats for data length indicator
 statsLenParser :: GenParser Char st String
-statsLenParser = char 'O' >> char 'K' >> char ' ' >> many1 digit
+statsLenParser = string "OK " >> many1 digit
 
 -- Testing
 main = do bs <- connectBeanstalk "localhost" "8887"
           printServerStats bs
           rjob <- reserveJob bs
           putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
+          rjob <- reserveJob bs
+          putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
+          rjob <- reserveJob bs
+          putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
           useTube bs "hbeanstalk"
           job <- putJob bs 1 0 500 "hello"
-
+          printServerStats bs
           putStrLn "exiting"
