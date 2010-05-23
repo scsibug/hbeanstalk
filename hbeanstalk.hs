@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 import Data.Bits
 import Network.Socket
 import Network.BSD
@@ -5,12 +7,22 @@ import Data.List
 import System.IO
 import Text.ParserCombinators.Parsec
 import Data.Yaml.Syck
+import Data.Typeable
 import qualified Data.Map as M
+import qualified Control.Exception as E
 
 type BeanstalkServer = Socket
 
 data Job = Job {job_id :: String,
                 job_body :: String}
+
+
+-- Exceptions from Beanstalk
+data BeanstalkException = JobNotFoundException | OutOfMemoryException |
+                          InternalErrorException | DrainingException |
+                          BadFormatException | UnknownCommandException
+    deriving (Show, Typeable)
+instance E.Exception BeanstalkException
 
 connectBeanstalk :: HostName
                  -> String
