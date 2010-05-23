@@ -103,18 +103,12 @@ parseReserve input =
       Left err -> ("",0)
 
 reservedParser :: GenParser Char st (String,String)
-reservedParser = do reservedSymParser
+reservedParser = do string "RESERVED"
                     char ' '
-                    x <- digitsParser
+                    x <- many1 digit
                     char ' '
-                    y <- digitsParser
+                    y <- many1 digit
                     return (x,y)
-
-reservedSymParser :: GenParser Char st String
-reservedSymParser = string "RESERVED"
-
-digitsParser :: GenParser Char st String
-digitsParser = many1 digit
 
 parseStatsLen :: String -> Int
 parseStatsLen input =
