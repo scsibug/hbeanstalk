@@ -24,23 +24,20 @@ connectBeanstalk hostname port =
        connect sock (addrAddress serveraddr)
        return sock
 
-stats :: BeanstalkServer -> IO ()
-stats s =
+getServerStats :: BeanstalkServer -> IO (M.Map String String)
+getServerStats s =
     do send s "stats\r\n"
---       recv s 800 >>= print
        statHeader <- readLine s
-       putStrLn statHeader
        let bytes = parseStatsLen statHeader
-       hFlush stdout
        (statContent, bytesRead) <- recvLen s bytes
-       putStr statContent
-       putStr "\n\n\n"
        yamlN <- parseYaml statContent
-       putStr (show yamlN)
-       let statMap = yamlMapToHMap yamlN
-       putStr "\n\n\n"
-       putStr (show statMap)
-       hFlush stdout
+       return $ yamlMapToHMap yamlN
+
+printServerStats :: BeanstalkServer -> IO ()
+printServerStats s =
+    do stats <- getServerStats s
+       let kv = M.assocs stats
+       mapM_ (\(k,v) -> putStrLn (k ++ " => " ++ v)) kv
 
 yamlMapToHMap :: YamlNode -> M.Map String String
 yamlMapToHMap y = M.fromList elems where
@@ -79,4 +76,4 @@ statsLenParser = char 'O' >> char 'K' >> char ' ' >> many1 digit
 
 -- Testing
 main = do bs <- connectBeanstalk "localhost" "8887"
-          stats bs
+          printServerStats bs
