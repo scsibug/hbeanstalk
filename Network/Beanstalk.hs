@@ -86,6 +86,13 @@ deleteJob s jobid =
        checkForBeanstalkErrors response
        putStrLn response
 
+buryJob :: BeanstalkServer -> Int -> Int -> IO ()
+buryJob s jobid pri =
+    do putStrLn ("bury "++(show jobid)++" "++(show pri)++"\r\n")
+       send s ("bury "++(show jobid)++" "++(show pri)++"\r\n")
+       response <- readLine s
+       checkForBeanstalkErrors response
+
 checkForBeanstalkErrors :: String -> IO ()
 checkForBeanstalkErrors input =
     do eop OutOfMemoryException "OUT_OF_MEMORY\r\n"
