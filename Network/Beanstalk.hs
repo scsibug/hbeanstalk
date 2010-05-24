@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
-module HBeanstalk where
+module Network.Beanstalk where
 import Data.Bits
 import Network.Socket
 import Network.BSD

@@ -1,5 +1,5 @@
 module Main where
-import HBeanstalk
+import Network.Beanstalk
 import Data.Bits
 import Network.Socket
 import Network.BSD
