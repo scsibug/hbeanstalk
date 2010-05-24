@@ -1,6 +1,23 @@
 {-# LANGUAGE DeriveDataTypeable #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Network.Beanstalk
+-- Copyright   :  (c) Greg Heartsfield 2010
+-- License     :  BSD3
+--
+-- Main API to beanstalkd
+-----------------------------------------------------------------------------
 
-module Network.Beanstalk where
+module Network.Beanstalk (
+  -- * Function Types
+  connectBeanstalk, putJob, reserveJob, deleteJob, buryJob, useTube,
+  getServerStats, printServerStats,
+  -- * Exception Predicates
+  isNotFoundException,
+  -- * Data Types
+  Job(..)
+  ) where
+
 import Data.Bits
 import Network.Socket
 import Network.BSD
