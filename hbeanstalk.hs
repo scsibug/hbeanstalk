@@ -21,7 +21,10 @@ data Job = Job {job_id :: String,
 -- Exceptions from Beanstalk
 data BeanstalkException = NotFoundException | OutOfMemoryException |
                           InternalErrorException | DrainingException |
-                          BadFormatException | UnknownCommandException
+                          BadFormatException | UnknownCommandException |
+                          JobTooBigException | ExpectedCRLFException |
+                          DeadlineSoonException | TimedOutException |
+                          NotIgnoredException
     deriving (Show, Typeable)
 instance E.Exception BeanstalkException
 
@@ -89,6 +92,11 @@ checkForBeanstalkErrors input =
        crashOnParse BadFormatException (parse (string "BAD_FORMAT") "ErrorParser" input)
        crashOnParse UnknownCommandException (parse (string "UNKNOWN_COMMAND") "ErrorParser" input)
        crashOnParse NotFoundException (parse (string "NOT_FOUND") "ErrorParser" input)
+       crashOnParse JobTooBigException (parse (string "JOB_TOO_BIG") "ErrorParser" input)
+       crashOnParse ExpectedCRLFException (parse (string "EXPECTED_CRLF") "ErrorParser" input)
+       crashOnParse DeadlineSoonException (parse (string "DEADLINE_SOON") "ErrorParser" input)
+       crashOnParse TimedOutException (parse (string "TIMED_OUT") "ErrorParser" input)
+       crashOnParse NotIgnoredException (parse (string "NOT_IGNORED") "ErrorParser" input)
 
 -- When a parse result is good, throw a specific exception
 crashOnParse :: BeanstalkException -> Either a b -> IO ()
