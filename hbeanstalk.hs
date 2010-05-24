@@ -86,21 +86,22 @@ deleteJob s jobid =
 
 checkForBeanstalkErrors :: String -> IO ()
 checkForBeanstalkErrors input =
-    do crashOnParse OutOfMemoryException (parse (string "OUT_OF_MEMORY") "ErrorParser" input)
-       crashOnParse InternalErrorException (parse (string "INTERNAL_ERROR") "ErrorParser" input)
-       crashOnParse DrainingException (parse (string "DRAINING") "ErrorParser" input)
-       crashOnParse BadFormatException (parse (string "BAD_FORMAT") "ErrorParser" input)
-       crashOnParse UnknownCommandException (parse (string "UNKNOWN_COMMAND") "ErrorParser" input)
-       crashOnParse NotFoundException (parse (string "NOT_FOUND") "ErrorParser" input)
-       crashOnParse JobTooBigException (parse (string "JOB_TOO_BIG") "ErrorParser" input)
-       crashOnParse ExpectedCRLFException (parse (string "EXPECTED_CRLF") "ErrorParser" input)
-       crashOnParse DeadlineSoonException (parse (string "DEADLINE_SOON") "ErrorParser" input)
-       crashOnParse TimedOutException (parse (string "TIMED_OUT") "ErrorParser" input)
-       crashOnParse NotIgnoredException (parse (string "NOT_IGNORED") "ErrorParser" input)
+    do eop OutOfMemoryException "OUT_OF_MEMORY"
+       eop InternalErrorException "INTERNAL_ERROR"
+       eop DrainingException "DRAINING"
+       eop BadFormatException "BAD_FORMAT"
+       eop UnknownCommandException "UNKNOWN_COMMAND"
+       eop NotFoundException "NOT_FOUND"
+       eop JobTooBigException "JOB_TOO_BIG"
+       eop ExpectedCRLFException "EXPECTED_CRLF"
+       eop DeadlineSoonException "DEADLINE_SOON"
+       eop TimedOutException "TIMED_OUT"
+       eop NotIgnoredException "NOT_IGNORED"
+       where eop e s = exceptionOnParse e (parse (string s) "errorParser" input)
 
--- When a parse result is good, throw a specific exception
-crashOnParse :: BeanstalkException -> Either a b -> IO ()
-crashOnParse e x = case x of
+-- When an error is successfully parsed, throw the given exception.
+exceptionOnParse :: BeanstalkException -> Either a b -> IO ()
+exceptionOnParse e x = case x of
                     Right _ -> E.throw e
                     Left _ -> return ()
 
