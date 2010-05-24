@@ -55,7 +55,7 @@ connectBeanstalk hostname port =
 
 -- put <pri> <delay> <ttr> <bytes>\r\n
 -- <data>\r\n
-putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO String
+putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO Int
 putJob s priority delay ttr job_body =
     do let job_size = length job_body
        send s ("put " ++
@@ -64,10 +64,11 @@ putJob s priority delay ttr job_body =
                (show ttr) ++ " " ++
                (show job_size) ++ "\r\n")
        send s (job_body ++ "\r\n")
-       status <- readLine s
-       checkForBeanstalkErrors status
-       putStrLn status
-       return "3"
+       response <- readLine s
+       checkForBeanstalkErrors response
+       let jobid = parsePut response
+       putStrLn response
+       return jobid
 
 reserveJob :: BeanstalkServer -> IO Job
 reserveJob s =
@@ -150,12 +151,19 @@ readLine s =
                            else do l <- readLine s
                                    return (c:l)
 
+
+parsePut :: String -> Int
+parsePut input =
+    case (parse (string "INSERTED " >> many1 digit) "BuryParser" input) of
+      Right x -> read x
+      Left _ -> 0
+
 -- Get Job ID and size
 parseReserve :: String -> (String,Int)
 parseReserve input =
     case (parse reservedParser "ReservedParser" input) of
       Right (x,y) -> (x, read y)
-      Left err -> ("",0)
+      Left _ -> ("",0)
 
 reservedParser :: GenParser Char st (String,String)
 reservedParser = do string "RESERVED"
