@@ -10,7 +10,8 @@ import Data.Yaml.Syck
 import Data.Typeable
 import qualified Data.Map as M
 import qualified Control.Exception as E
-
+import Data.Maybe
+import Control.Monad
 type BeanstalkServer = Socket
 
 data Job = Job {job_id :: String,
@@ -18,11 +19,20 @@ data Job = Job {job_id :: String,
 
 
 -- Exceptions from Beanstalk
-data BeanstalkException = JobNotFoundException | OutOfMemoryException |
+data BeanstalkException = NotFoundException | OutOfMemoryException |
                           InternalErrorException | DrainingException |
                           BadFormatException | UnknownCommandException
     deriving (Show, Typeable)
 instance E.Exception BeanstalkException
+
+isNotFoundException :: BeanstalkException -> Bool
+isNotFoundException be = case be of
+                              NotFoundException -> True
+                              _ -> False
+isBadFormatException :: BeanstalkException -> Bool
+isBadFormatException be = case be of
+                                 BadFormatException -> True
+                                 _ -> False
 
 connectBeanstalk :: HostName
                  -> String
@@ -51,6 +61,7 @@ putJob s priority delay ttr job_body =
                (show job_size) ++ "\r\n")
        send s (job_body ++ "\r\n")
        status <- readLine s
+       checkForBeanstalkErrors status
        putStrLn status
        return "3"
 
@@ -67,7 +78,23 @@ deleteJob :: BeanstalkServer -> String -> IO ()
 deleteJob s jobid =
     do send s ("delete "++jobid++"\r\n")
        response <- readLine s
+       checkForBeanstalkErrors response
        putStrLn response
+
+checkForBeanstalkErrors :: String -> IO ()
+checkForBeanstalkErrors input =
+    do crashOnParse OutOfMemoryException (parse (string "OUT_OF_MEMORY") "ErrorParser" input)
+       crashOnParse InternalErrorException (parse (string "INTERNAL_ERROR") "ErrorParser" input)
+       crashOnParse DrainingException (parse (string "DRAINING") "ErrorParser" input)
+       crashOnParse BadFormatException (parse (string "BAD_FORMAT") "ErrorParser" input)
+       crashOnParse UnknownCommandException (parse (string "UNKNOWN_COMMAND") "ErrorParser" input)
+       crashOnParse NotFoundException (parse (string "NOT_FOUND") "ErrorParser" input)
+
+-- When a parse result is good, throw a specific exception
+crashOnParse :: BeanstalkException -> Either a b -> IO ()
+crashOnParse e x = case x of
+                    Right _ -> E.throw e
+                    Left _ -> return ()
 
 useTube :: BeanstalkServer -> String -> IO ()
 useTube s name =
@@ -141,14 +168,24 @@ statsLenParser = string "OK " >> many1 digit
 -- Testing
 main = do bs <- connectBeanstalk "localhost" "8887"
           printServerStats bs
+          mapM_ (\x -> putJob bs 1 0 500 ("hello "++(show x))) [1..10]
+          job <- putJob bs 1 0 500 "hello"
           rjob <- reserveJob bs
           putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
           rjob <- reserveJob bs
           putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
           rjob <- reserveJob bs
           putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
-          deleteJob bs (job_id rjob)
+          -- Do a delete with guard to protect against exceptions.  This will succeed.
+          e <- E.tryJust (guard . isNotFoundException) (deleteJob bs (job_id rjob))
+          putStrLn (show e)
+          -- But this will fail with a NOT_FOUND error.
+          e <- E.tryJust (guard . isNotFoundException) (deleteJob bs "9999999")
+          putStrLn (show e)
+          -- And this one gives BAD_FORMAT.
+          e <- E.tryJust (guard . isBadFormatException) (deleteJob bs "a")
+          putStrLn (show e)
           useTube bs "hbeanstalk"
           job <- putJob bs 1 0 500 "hello"
-          printServerStats bs
+          --printServerStats bs
           putStrLn "exiting"
