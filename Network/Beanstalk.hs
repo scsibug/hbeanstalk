@@ -84,14 +84,13 @@ putJob s priority delay ttr job_body =
        response <- readLine s
        checkForBeanstalkErrors response
        let jobid = parsePut response
-       putStrLn response
        return jobid
 
 reserveJob :: BeanstalkServer -> IO Job
 reserveJob s =
     do send s "reserve\r\n"
        response <- readLine s
-       putStrLn response
+       checkForBeanstalkErrors response
        let (jobid, bytes) = parseReserve response
        (jobContent, bytesRead) <- recvLen s (bytes+2)
        return (Job (read jobid) jobContent)
@@ -101,12 +100,10 @@ deleteJob s jobid =
     do send s ("delete "++(show jobid)++"\r\n")
        response <- readLine s
        checkForBeanstalkErrors response
-       putStrLn response
 
 buryJob :: BeanstalkServer -> Int -> Int -> IO ()
 buryJob s jobid pri =
-    do putStrLn ("bury "++(show jobid)++" "++(show pri)++"\r\n")
-       send s ("bury "++(show jobid)++" "++(show pri)++"\r\n")
+    do send s ("bury "++(show jobid)++" "++(show pri)++"\r\n")
        response <- readLine s
        checkForBeanstalkErrors response
 
@@ -135,12 +132,13 @@ useTube :: BeanstalkServer -> String -> IO ()
 useTube s name =
     do send s ("use "++name++"\r\n");
        response <- readLine s
-       putStrLn response
+       checkForBeanstalkErrors response
 
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats s =
     do send s "stats\r\n"
        statHeader <- readLine s
+       checkForBeanstalkErrors statHeader
        let bytes = parseStatsLen statHeader
        (statContent, bytesRead) <- recvLen s (bytes+2)
        yamlN <- parseYaml statContent
