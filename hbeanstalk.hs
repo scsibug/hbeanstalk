@@ -87,17 +87,17 @@ deleteJob s jobid =
 
 checkForBeanstalkErrors :: String -> IO ()
 checkForBeanstalkErrors input =
-    do eop OutOfMemoryException "OUT_OF_MEMORY"
-       eop InternalErrorException "INTERNAL_ERROR"
-       eop DrainingException "DRAINING"
-       eop BadFormatException "BAD_FORMAT"
-       eop UnknownCommandException "UNKNOWN_COMMAND"
-       eop NotFoundException "NOT_FOUND"
-       eop JobTooBigException "JOB_TOO_BIG"
-       eop ExpectedCRLFException "EXPECTED_CRLF"
-       eop DeadlineSoonException "DEADLINE_SOON"
-       eop TimedOutException "TIMED_OUT"
-       eop NotIgnoredException "NOT_IGNORED"
+    do eop OutOfMemoryException "OUT_OF_MEMORY\r\n"
+       eop InternalErrorException "INTERNAL_ERROR\r\n"
+       eop DrainingException "DRAINING\r\n"
+       eop BadFormatException "BAD_FORMAT\r\n"
+       eop UnknownCommandException "UNKNOWN_COMMAND\r\n"
+       eop NotFoundException "NOT_FOUND\r\n"
+       eop JobTooBigException "JOB_TOO_BIG\r\n"
+       eop ExpectedCRLFException "EXPECTED_CRLF\r\n"
+       eop DeadlineSoonException "DEADLINE_SOON\r\n"
+       eop TimedOutException "TIMED_OUT\r\n"
+       eop NotIgnoredException "NOT_IGNORED\r\n"
        where eop e s = exceptionOnParse e (parse (string s) "errorParser" input)
 
 -- When an error is successfully parsed, throw the given exception.
@@ -146,7 +146,7 @@ readLine s =
         where
           readLine' = do c <- readChar s
                          if c == '\n'
-                           then return ""
+                           then return (c:[])
                            else do l <- readLine s
                                    return (c:l)
 
