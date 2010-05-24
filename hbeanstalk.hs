@@ -103,7 +103,7 @@ checkForBeanstalkErrors input =
 -- When an error is successfully parsed, throw the given exception.
 exceptionOnParse :: BeanstalkException -> Either a b -> IO ()
 exceptionOnParse e x = case x of
-                    Right _ -> E.throw e
+                    Right _ -> E.throwIO e
                     Left _ -> return ()
 
 useTube :: BeanstalkServer -> String -> IO ()
