@@ -14,7 +14,7 @@ import Data.Maybe
 import Control.Monad
 type BeanstalkServer = Socket
 
-data Job = Job {job_id :: String,
+data Job = Job {job_id :: Int,
                 job_body :: String}
 
 
@@ -75,11 +75,11 @@ reserveJob s =
        putStrLn response
        let (jobid, bytes) = parseReserve response
        (jobContent, bytesRead) <- recvLen s (bytes+2)
-       return (Job jobid jobContent)
+       return (Job (read jobid) jobContent)
 
-deleteJob :: BeanstalkServer -> String -> IO ()
+deleteJob :: BeanstalkServer -> Int -> IO ()
 deleteJob s jobid =
-    do send s ("delete "++jobid++"\r\n")
+    do send s ("delete "++(show jobid)++"\r\n")
        response <- readLine s
        checkForBeanstalkErrors response
        putStrLn response
@@ -179,19 +179,16 @@ main = do bs <- connectBeanstalk "localhost" "8887"
           mapM_ (\x -> putJob bs 1 0 500 ("hello "++(show x))) [1..10]
           job <- putJob bs 1 0 500 "hello"
           rjob <- reserveJob bs
-          putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
+          putStrLn $ "Found job with ID: " ++ (show (job_id rjob)) ++ " and body: " ++ (job_body rjob)
           rjob <- reserveJob bs
-          putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
+          putStrLn $ "Found job with ID: " ++ (show (job_id rjob)) ++ " and body: " ++ (job_body rjob)
           rjob <- reserveJob bs
-          putStrLn $ "Found job with ID: " ++ (job_id rjob) ++ " and body: " ++ (job_body rjob)
+          putStrLn $ "Found job with ID: " ++ (show (job_id rjob)) ++ " and body: " ++ (job_body rjob)
           -- Do a delete with guard to protect against exceptions.  This will succeed.
           e <- E.tryJust (guard . isNotFoundException) (deleteJob bs (job_id rjob))
           putStrLn (show e)
           -- But this will fail with a NOT_FOUND error.
-          e <- E.tryJust (guard . isNotFoundException) (deleteJob bs "9999999")
-          putStrLn (show e)
-          -- And this one gives BAD_FORMAT.
-          e <- E.tryJust (guard . isBadFormatException) (deleteJob bs "a")
+          e <- E.tryJust (guard . isNotFoundException) (deleteJob bs 9999999)
           putStrLn (show e)
           useTube bs "hbeanstalk"
           job <- putJob bs 1 0 500 "hello"
