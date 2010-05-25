@@ -10,7 +10,7 @@
 
 module Network.Beanstalk (
   -- * Function Types
-  connectBeanstalk, putJob, reserveJob, deleteJob, buryJob, useTube,
+  connectBeanstalk, putJob, releaseJob, reserveJob, deleteJob, buryJob, useTube,
   getServerStats, printServerStats,
   -- * Exception Predicates
   isNotFoundException,
@@ -30,6 +30,7 @@ import qualified Data.Map as M
 import qualified Control.Exception as E
 import Data.Maybe
 import Control.Monad
+
 type BeanstalkServer = Socket
 
 data Job = Job {job_id :: Int,
@@ -98,6 +99,15 @@ reserveJob s =
 deleteJob :: BeanstalkServer -> Int -> IO ()
 deleteJob s jobid =
     do send s ("delete "++(show jobid)++"\r\n")
+       response <- readLine s
+       checkForBeanstalkErrors response
+
+releaseJob :: BeanstalkServer -> Int -> Int -> Int -> IO ()
+releaseJob s jobid priority delay =
+    do send s ("release " ++
+               (show jobid) ++ " " ++
+               (show priority) ++ " " ++
+               (show delay) ++ "\r\n")
        response <- readLine s
        checkForBeanstalkErrors response
 
