@@ -30,8 +30,8 @@ import qualified Data.Map as M
 import qualified Control.Exception as E
 import Data.Maybe
 import Control.Monad
-
-type BeanstalkServer = Socket
+import Control.Concurrent.MVar
+type BeanstalkServer = MVar Socket
 
 data Job = Job {job_id :: Int,
                 job_body :: String}
@@ -69,53 +69,59 @@ connectBeanstalk hostname port =
        setSocketOption sock KeepAlive 1
        -- Connect to server
        connect sock (addrAddress serveraddr)
-       return sock
+       bs <- newMVar sock
+       return bs
 
 -- put <pri> <delay> <ttr> <bytes>\r\n
 -- <data>\r\n
 putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO Int
-putJob s priority delay ttr job_body =
-    do let job_size = length job_body
-       send s ("put " ++
-               (show priority) ++ " " ++
-               (show delay) ++ " " ++
-               (show ttr) ++ " " ++
-               (show job_size) ++ "\r\n")
-       send s (job_body ++ "\r\n")
-       response <- readLine s
-       checkForBeanstalkErrors response
-       let jobid = parsePut response
-       return jobid
+putJob bs priority delay ttr job_body = withMVar bs task
+    where task s =
+              do let job_size = length job_body
+                 send s ("put " ++
+                         (show priority) ++ " " ++
+                         (show delay) ++ " " ++
+                         (show ttr) ++ " " ++
+                         (show job_size) ++ "\r\n")
+                 send s (job_body ++ "\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 let jobid = parsePut response
+                 return jobid
 
 reserveJob :: BeanstalkServer -> IO Job
-reserveJob s =
-    do send s "reserve\r\n"
-       response <- readLine s
-       checkForBeanstalkErrors response
-       let (jobid, bytes) = parseReserve response
-       (jobContent, bytesRead) <- recvLen s (bytes+2)
-       return (Job (read jobid) jobContent)
+reserveJob bs = withMVar bs task
+    where task s =
+              do send s "reserve\r\n"
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 let (jobid, bytes) = parseReserve response
+                 (jobContent, bytesRead) <- recvLen s (bytes+2)
+                 return (Job (read jobid) jobContent)
 
 deleteJob :: BeanstalkServer -> Int -> IO ()
-deleteJob s jobid =
-    do send s ("delete "++(show jobid)++"\r\n")
-       response <- readLine s
-       checkForBeanstalkErrors response
+deleteJob bs jobid = withMVar bs task
+    where task s =
+              do send s ("delete "++(show jobid)++"\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
 
 releaseJob :: BeanstalkServer -> Int -> Int -> Int -> IO ()
-releaseJob s jobid priority delay =
-    do send s ("release " ++
-               (show jobid) ++ " " ++
-               (show priority) ++ " " ++
-               (show delay) ++ "\r\n")
-       response <- readLine s
-       checkForBeanstalkErrors response
+releaseJob bs jobid priority delay = withMVar bs task
+    where task s =
+              do send s ("release " ++
+                         (show jobid) ++ " " ++
+                         (show priority) ++ " " ++
+                         (show delay) ++ "\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
 
 buryJob :: BeanstalkServer -> Int -> Int -> IO ()
-buryJob s jobid pri =
-    do send s ("bury "++(show jobid)++" "++(show pri)++"\r\n")
-       response <- readLine s
-       checkForBeanstalkErrors response
+buryJob bs jobid pri = withMVar bs task
+    where task s =
+              do send s ("bury "++(show jobid)++" "++(show pri)++"\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
 
 checkForBeanstalkErrors :: String -> IO ()
 checkForBeanstalkErrors input =
@@ -139,20 +145,22 @@ exceptionOnParse e x = case x of
                     Left _ -> return ()
 
 useTube :: BeanstalkServer -> String -> IO ()
-useTube s name =
-    do send s ("use "++name++"\r\n");
-       response <- readLine s
-       checkForBeanstalkErrors response
+useTube bs name = withMVar bs task
+    where task s =
+              do send s ("use "++name++"\r\n");
+                 response <- readLine s
+                 checkForBeanstalkErrors response
 
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
-getServerStats s =
-    do send s "stats\r\n"
-       statHeader <- readLine s
-       checkForBeanstalkErrors statHeader
-       let bytes = parseStatsLen statHeader
-       (statContent, bytesRead) <- recvLen s (bytes+2)
-       yamlN <- parseYaml statContent
-       return $ yamlMapToHMap yamlN
+getServerStats bs = withMVar bs task
+    where task s =
+              do send s "stats\r\n"
+                 statHeader <- readLine s
+                 checkForBeanstalkErrors statHeader
+                 let bytes = parseStatsLen statHeader
+                 (statContent, bytesRead) <- recvLen s (bytes+2)
+                 yamlN <- parseYaml statContent
+                 return $ yamlMapToHMap yamlN
 
 printServerStats :: BeanstalkServer -> IO ()
 printServerStats s =
@@ -182,7 +190,6 @@ readLine s =
                            then return (c:[])
                            else do l <- readLine s
                                    return (c:l)
-
 
 parsePut :: String -> Int
 parsePut input =
