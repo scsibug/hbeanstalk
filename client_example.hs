@@ -37,6 +37,8 @@ main = do bs <- connectBeanstalk "localhost" "8887"
           watchCount <- watchTube bs "default"
           watchCount <- watchTube bs "hbeanstalk"
           putStrLn ("Now watching "++(show watchCount)++" tubes")
+          watchCount <- ignoreTube bs "hbeanstalk"
+          putStrLn ("Now watching "++(show watchCount)++" tubes")
           job <- putJob bs 1 500 500 "hello"
           rjob <- reserveJob bs
           putStrLn ("About to try to bury job "++(show (job_id rjob)))

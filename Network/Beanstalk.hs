@@ -11,7 +11,8 @@
 module Network.Beanstalk (
   -- * Function Types
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
-  deleteJob, buryJob, useTube, watchTube, getServerStats, printServerStats,
+  deleteJob, buryJob, useTube, watchTube, ignoreTube, getServerStats,
+  printServerStats,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -189,6 +190,17 @@ watchTube bs name = withMVar bs task
                  checkForBeanstalkErrors response
                  return $ parseWatching response
 
+-- Removes named tube to watch list, returns the number of tubes still
+-- being watched.  If the tube being ignored is the only one currently
+-- being watched, a NotIgnoredException is thrown.
+ignoreTube :: BeanstalkServer -> String -> IO Int
+ignoreTube bs name = withMVar bs task
+    where task s =
+              do send s ("ignore "++name++"\r\n");
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 return $ parseWatching response
+
 -- Read server statistics as a mapping from names to values.
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats bs = withMVar bs task
@@ -231,8 +243,8 @@ readLine s =
                            else do l <- readLine s
                                    return (c:l)
 
--- Parse response from watch command to determine how many tubes are currently
--- being watched.
+-- Parse response from watch/ignore command to determine how many
+-- tubes are currently being watched.
 parseWatching :: String -> Int
 parseWatching input =
     case (parse (string "WATCHING " >> many1 digit) "WatchParser" input) of
