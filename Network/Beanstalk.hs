@@ -10,10 +10,10 @@
 
 module Network.Beanstalk (
   -- * Function Types
-  connectBeanstalk, putJob, releaseJob, reserveJob, deleteJob, buryJob, useTube,
-  getServerStats, printServerStats,
+  connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
+  deleteJob, buryJob, useTube, getServerStats, printServerStats,
   -- * Exception Predicates
-  isNotFoundException,
+  isNotFoundException, isTimedOutException,
   -- * Data Types
   Job(..)
   ) where
@@ -35,6 +35,7 @@ type BeanstalkServer = MVar Socket
 
 data Job = Job {job_id :: Int,
                 job_body :: String}
+           deriving (Show, Read)
 
 
 -- Exceptions from Beanstalk
@@ -49,12 +50,16 @@ instance E.Exception BeanstalkException
 
 isNotFoundException :: BeanstalkException -> Bool
 isNotFoundException be = case be of
-                              NotFoundException -> True
-                              _ -> False
+                           NotFoundException -> True
+                           _ -> False
 isBadFormatException :: BeanstalkException -> Bool
 isBadFormatException be = case be of
-                                 BadFormatException -> True
-                                 _ -> False
+                            BadFormatException -> True
+                            _ -> False
+isTimedOutException :: BeanstalkException -> Bool
+isTimedOutException be = case be of
+                           TimedOutException -> True
+                           _ -> False
 
 connectBeanstalk :: HostName
                  -> String
@@ -93,6 +98,16 @@ reserveJob :: BeanstalkServer -> IO Job
 reserveJob bs = withMVar bs task
     where task s =
               do send s "reserve\r\n"
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 let (jobid, bytes) = parseReserve response
+                 (jobContent, bytesRead) <- recvLen s (bytes+2)
+                 return (Job (read jobid) jobContent)
+
+reserveJobWithTimeout :: BeanstalkServer -> Int -> IO Job
+reserveJobWithTimeout bs seconds = withMVar bs task
+    where task s =
+              do send s ("reserve-with-timeout "++(show seconds)++"\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
