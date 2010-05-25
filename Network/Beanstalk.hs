@@ -16,7 +16,7 @@ module Network.Beanstalk (
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
-  Job(..)
+  Job(..), BeanstalkServer
   ) where
 
 import Data.Bits
