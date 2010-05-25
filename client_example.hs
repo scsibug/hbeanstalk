@@ -34,6 +34,9 @@ main = do bs <- connectBeanstalk "localhost" "8887"
           e <- E.tryJust (guard . isNotFoundException) (deleteJob bs 9999999)
           putStrLn (show e)
           useTube bs "hbeanstalk"
+          watchCount <- watchTube bs "default"
+          watchCount <- watchTube bs "hbeanstalk"
+          putStrLn ("Now watching "++(show watchCount)++" tubes")
           job <- putJob bs 1 500 500 "hello"
           rjob <- reserveJob bs
           putStrLn ("About to try to bury job "++(show (job_id rjob)))

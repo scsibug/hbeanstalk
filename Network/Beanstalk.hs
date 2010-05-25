@@ -11,7 +11,7 @@
 module Network.Beanstalk (
   -- * Function Types
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
-  deleteJob, buryJob, useTube, getServerStats, printServerStats,
+  deleteJob, buryJob, useTube, watchTube, getServerStats, printServerStats,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -166,6 +166,15 @@ useTube bs name = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
 
+-- Adds named tube to watch list, returns the number of tubes being watched
+watchTube :: BeanstalkServer -> String -> IO Int
+watchTube bs name = withMVar bs task
+    where task s =
+              do send s ("watch "++name++"\r\n");
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 return $ parseWatching response
+
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats bs = withMVar bs task
     where task s =
@@ -205,6 +214,12 @@ readLine s =
                            then return (c:[])
                            else do l <- readLine s
                                    return (c:l)
+
+parseWatching :: String -> Int
+parseWatching input =
+    case (parse (string "WATCHING " >> many1 digit) "WatchParser" input) of
+      Right x -> read x
+      Left _ -> 0
 
 parsePut :: String -> Int
 parsePut input =
