@@ -52,15 +52,18 @@ isNotFoundException :: BeanstalkException -> Bool
 isNotFoundException be = case be of
                            NotFoundException -> True
                            _ -> False
+
 isBadFormatException :: BeanstalkException -> Bool
 isBadFormatException be = case be of
                             BadFormatException -> True
                             _ -> False
+
 isTimedOutException :: BeanstalkException -> Bool
 isTimedOutException be = case be of
                            TimedOutException -> True
                            _ -> False
 
+-- Connect to a beanstalkd server.
 connectBeanstalk :: HostName
                  -> String
                  -> IO BeanstalkServer
@@ -77,8 +80,9 @@ connectBeanstalk hostname port =
        bs <- newMVar sock
        return bs
 
--- put <pri> <delay> <ttr> <bytes>\r\n
--- <data>\r\n
+-- Put a new job on the current tube that was selected with useTube.
+-- Specify numeric priority, delay before becoming active, a limit
+-- on the time-to-run, and a job body.
 putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO Int
 putJob bs priority delay ttr job_body = withMVar bs task
     where task s =
@@ -94,6 +98,8 @@ putJob bs priority delay ttr job_body = withMVar bs task
                  let jobid = parsePut response
                  return jobid
 
+-- Reserve a new job from the watched tube list, blocking until one becomes
+-- available.
 reserveJob :: BeanstalkServer -> IO Job
 reserveJob bs = withMVar bs task
     where task s =
@@ -104,6 +110,10 @@ reserveJob bs = withMVar bs task
                  (jobContent, bytesRead) <- recvLen s (bytes+2)
                  return (Job (read jobid) jobContent)
 
+-- Reserve a job from the watched tube list, blocking for the specified number
+-- of seconds or until a job is returned.  If no jobs are found before the
+-- timeout value, a TimedOutException will be thrown.  If another reserved job
+-- is about to exceed its time-to-run, a DeadlineSoonException will be thrown.
 reserveJobWithTimeout :: BeanstalkServer -> Int -> IO Job
 reserveJobWithTimeout bs seconds = withMVar bs task
     where task s =
@@ -114,6 +124,7 @@ reserveJobWithTimeout bs seconds = withMVar bs task
                  (jobContent, bytesRead) <- recvLen s (bytes+2)
                  return (Job (read jobid) jobContent)
 
+-- Delete a job to indicate that it has been completed.
 deleteJob :: BeanstalkServer -> Int -> IO ()
 deleteJob bs jobid = withMVar bs task
     where task s =
@@ -121,6 +132,7 @@ deleteJob bs jobid = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
 
+-- Indicate that a job should be released back to the tube for another consumer.
 releaseJob :: BeanstalkServer -> Int -> Int -> Int -> IO ()
 releaseJob bs jobid priority delay = withMVar bs task
     where task s =
@@ -131,6 +143,7 @@ releaseJob bs jobid priority delay = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
 
+-- Bury a job so that it cannot be reserved.
 buryJob :: BeanstalkServer -> Int -> Int -> IO ()
 buryJob bs jobid pri = withMVar bs task
     where task s =
@@ -159,6 +172,7 @@ exceptionOnParse e x = case x of
                     Right _ -> E.throwIO e
                     Left _ -> return ()
 
+-- Assign a tube for new jobs created with put command.
 useTube :: BeanstalkServer -> String -> IO ()
 useTube bs name = withMVar bs task
     where task s =
@@ -166,7 +180,7 @@ useTube bs name = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
 
--- Adds named tube to watch list, returns the number of tubes being watched
+-- Adds named tube to watch list, returns the number of tubes being watched.
 watchTube :: BeanstalkServer -> String -> IO Int
 watchTube bs name = withMVar bs task
     where task s =
@@ -175,6 +189,7 @@ watchTube bs name = withMVar bs task
                  checkForBeanstalkErrors response
                  return $ parseWatching response
 
+-- Read server statistics as a mapping from names to values.
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats bs = withMVar bs task
     where task s =
@@ -186,6 +201,7 @@ getServerStats bs = withMVar bs task
                  yamlN <- parseYaml statContent
                  return $ yamlMapToHMap yamlN
 
+-- Print server stats to screen in a readable format.
 printServerStats :: BeanstalkServer -> IO ()
 printServerStats s =
     do stats <- getServerStats s
@@ -199,7 +215,7 @@ yamlMapToHMap y = M.fromList elems where
     yelems = map (\(x,y) -> (n_elem x, n_elem y))  maplist
     elems = map (\(EStr x, EStr y) -> (unpackBuf x, unpackBuf y)) yelems
 
--- Read a single character from socket without handling errors
+-- Read a single character from socket without handling errors.
 readChar :: Socket -> IO Char
 readChar s = recv s 1 >>= return . head
 
@@ -215,25 +231,30 @@ readLine s =
                            else do l <- readLine s
                                    return (c:l)
 
+-- Parse response from watch command to determine how many tubes are currently
+-- being watched.
 parseWatching :: String -> Int
 parseWatching input =
     case (parse (string "WATCHING " >> many1 digit) "WatchParser" input) of
       Right x -> read x
       Left _ -> 0
 
+-- Parse response from bury command.
 parsePut :: String -> Int
 parsePut input =
-    case (parse (string "INSERTED " >> many1 digit) "BuryParser" input) of
+    case (parse (string "INSERTED " >> many1 digit) "PutParser" input) of
       Right x -> read x
       Left _ -> 0
 
--- Get Job ID and size
+-- Get Job ID and size.
 parseReserve :: String -> (String,Int)
 parseReserve input =
     case (parse reservedParser "ReservedParser" input) of
       Right (x,y) -> (x, read y)
       Left _ -> ("",0)
 
+-- Parse response from reserve command, including job id and bytes of body
+-- to come next.
 reservedParser :: GenParser Char st (String,String)
 reservedParser = do string "RESERVED"
                     char ' '
@@ -242,12 +263,13 @@ reservedParser = do string "RESERVED"
                     y <- many1 digit
                     return (x,y)
 
+-- Get number of bytes from server-status response string.
 parseStatsLen :: String -> Int
 parseStatsLen input =
         case (parse statsLenParser "StatsLenParser" input) of
           Right len -> read len
           Left err -> 0
 
--- Parser for first line of stats for data length indicator
+-- Parser for first line of stats for data length indicator.
 statsLenParser :: GenParser Char st String
 statsLenParser = string "OK " >> many1 digit
