@@ -70,7 +70,6 @@ watchTest =
                  watchCount <- watchTube bs tubeName
                  assertEqual "Watch list should consist of 'default' and newly watched tube"
                                  2 watchCount
-                 return ()
              )
 
 -- Test that ignoring a tube works
@@ -84,7 +83,6 @@ ignoreTest =
                  newWatchCount <- ignoreTube bs "default"
                  assertEqual "Watch list should consist of newly watched tube only"
                                  1 newWatchCount
-                 return ()
              )
 
 -- Simply test that connecting and putting a job in the default tube works without exceptions.
