@@ -15,7 +15,7 @@ Synopsis:       Client for the beanstalkd workqueue service, let Haskell do your
 Description:    This is the hbeanstalk library.  It provides a client
                 interface to a beanstalkd server, allowing Haskell to be
                 a producer and/or a consumer of work items.
-extra-source-files: README, client_example.hs
+extra-source-files: README, client_example.hs, Tests.hs
 
 source-repository head
   type:     git

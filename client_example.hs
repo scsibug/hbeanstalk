@@ -14,7 +14,7 @@ import Data.Maybe
 import Control.Monad
 
 -- Testing
-main = do bs <- connectBeanstalk "localhost" "8887"
+main = do bs <- connectBeanstalk "localhost" "11300"
           printServerStats bs
           -- If server has no jobs, this should wait for 1 second and then timeout
           e <- E.tryJust (guard . isTimedOutException) (reserveJobWithTimeout bs 1)
