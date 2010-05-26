@@ -13,7 +13,7 @@ module Network.Beanstalk (
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
   deleteJob, buryJob, useTube, watchTube, ignoreTube, peekJob, peekReadyJob,
   peekDelayedJob, peekBuriedJob, kick, statsJob, statsTube, statsServer,
-  printStats, listTubes, listTubesWatched, printList,
+  printStats, listTubes, listTubesWatched, listTubeUsed, printList,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -297,6 +297,32 @@ listTubes bs = genericList bs "list-tubes"
 -- List all watched tubes.
 listTubesWatched :: BeanstalkServer -> IO [String]
 listTubesWatched bs = genericList bs "list-tubes-watched"
+
+-- List used tube.
+listTubeUsed :: BeanstalkServer -> IO String
+listTubeUsed bs = withMVar bs task
+    where task s =
+              do send s ("list-tube-used\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 let tubeName = parseUsedTube response
+                 return tubeName
+ 
+parseUsedTube :: String -> String
+parseUsedTube input =
+    case (parse usedTubeParser "UsedTubeParser" input) of
+      Right x -> x
+      Left _ -> ""
+
+nameParser = do initial <- leadingNameParser
+                rest <- many1 (leadingNameParser <|> char '-')
+                return (initial : rest)
+                    where leadingNameParser = alphaNum <|> oneOf "+/;.$_()"
+
+usedTubeParser = do string "USING "
+                    tube <- nameParser
+                    string "\r\n"
+                    return tube
 
 -- Essence of list commands that return YAML lists.
 genericList :: BeanstalkServer -> String -> IO [String]
