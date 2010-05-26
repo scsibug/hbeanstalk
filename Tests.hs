@@ -34,7 +34,8 @@ tests =
      TestLabel "Use" useTest,
      TestLabel "Watch" watchTest,
      TestLabel "Put" putTest,
-     TestLabel "Put/Reserve" putReserveTest
+     TestLabel "Put/Reserve" putReserveTest,
+     TestLabel "Put/Reserve-With-Timeout" putReserveWithTimeoutTest
     ]
 
 
@@ -104,6 +105,20 @@ putReserveTest =
                  assertEqual "Reserved job should match job that was just put"
                              put_job_id (job_id rsv_job)
              )
+
+-- Test putting and then reserving a job with timeout
+putReserveWithTimeoutTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 randString <- randomName
+                 let body = "My test job body, " ++ randString
+                 put_job_id <- putJob bs 1 0 60 body
+                 rsv_job <- reserveJobWithTimeout bs 2
+                 assertEqual "Reserved job should match job that was just put"
+                             put_job_id (job_id rsv_job)
+             )
+
+
 
 -- Configure a new beanstalkd connection to use&watch a single tube
 -- with a random name.
