@@ -12,7 +12,7 @@ module Network.Beanstalk (
   -- * Function Types
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
   deleteJob, buryJob, useTube, watchTube, ignoreTube, getServerStats,
-  printServerStats, peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob,
+  printServerStats, peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kick,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -240,7 +240,7 @@ genericPeek bs cmd = withMVar bs task
 kick :: BeanstalkServer -> Int -> IO Int
 kick bs maxcount = withMVar bs task
     where task s =
-              do send s ("kick "++(show maxcount))
+              do send s ("kick "++(show maxcount)++"\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  return (parseKicked response)
