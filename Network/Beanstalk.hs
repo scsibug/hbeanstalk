@@ -11,9 +11,9 @@
 module Network.Beanstalk (
   -- * Function Types
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
-  deleteJob, buryJob, useTube, watchTube, ignoreTube, getServerStats,
-  printStats, peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kick,
-  statsJob, statsTube,
+  deleteJob, buryJob, useTube, watchTube, ignoreTube, peekJob, peekReadyJob,
+  peekDelayedJob, peekBuriedJob, kick, statsJob, statsTube, statsServer,
+  printStats,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -282,15 +282,8 @@ printStats stats =
        mapM_ (\(k,v) -> putStrLn (k ++ " => " ++ v)) kv
 
 -- Read server statistics as a mapping from names to values.
-getServerStats :: BeanstalkServer -> IO (M.Map String String)
-getServerStats bs = genericStats bs "stats"
-
--- Print server stats to screen in a readable format.
-printServerStats :: BeanstalkServer -> IO ()
-printServerStats s =
-    do stats <- getServerStats s
-       let kv = M.assocs stats
-       mapM_ (\(k,v) -> putStrLn (k ++ " => " ++ v)) kv
+statsServer :: BeanstalkServer -> IO (M.Map String String)
+statsServer bs = genericStats bs "stats"
 
 yamlMapToHMap :: YamlNode -> M.Map String String
 yamlMapToHMap y = M.fromList elems where
