@@ -12,7 +12,7 @@ module Network.Beanstalk (
   -- * Function Types
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
   deleteJob, buryJob, useTube, watchTube, ignoreTube, getServerStats,
-  printServerStats,
+  printServerStats, peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
