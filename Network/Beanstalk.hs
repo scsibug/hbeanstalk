@@ -13,7 +13,7 @@ module Network.Beanstalk (
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
   deleteJob, buryJob, useTube, watchTube, ignoreTube, peekJob, peekReadyJob,
   peekDelayedJob, peekBuriedJob, kick, statsJob, statsTube, statsServer,
-  printStats,
+  printStats, listTubes, printList,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -261,7 +261,7 @@ genericStats bs cmd = withMVar bs task
               do send s (cmd++"\r\n")
                  statHeader <- readLine s
                  checkForBeanstalkErrors statHeader
-                 let bytes = parseStatsLen statHeader
+                 let bytes = parseOkLen statHeader
                  (statContent, bytesRead) <- recvLen s (bytes)
                  recv s 2 -- Ending CRLF
                  yamlN <- parseYaml statContent
@@ -281,9 +281,38 @@ printStats stats =
     do let kv = M.assocs stats
        mapM_ (\(k,v) -> putStrLn (k ++ " => " ++ v)) kv
 
+-- Pretty print a list.
+printList :: [String] -> IO ()
+printList list =
+    do mapM_ (\(n,x) -> putStrLn (" "++(show n)++". "++x)) (zip [1..] (list))
+
 -- Read server statistics as a mapping from names to values.
 statsServer :: BeanstalkServer -> IO (M.Map String String)
 statsServer bs = genericStats bs "stats"
+
+-- List all existing tubes.
+listTubes :: BeanstalkServer -> IO [String]
+listTubes bs = genericList bs "list-tubes"
+
+-- Essence of list commands.
+genericList :: BeanstalkServer -> String -> IO [String]
+genericList bs cmd = withMVar bs task
+    where task s =
+              do send s (cmd++"\r\n")
+                 lHeader <- readLine s
+                 checkForBeanstalkErrors lHeader
+                 let bytes = parseOkLen lHeader
+                 (content, bytesRead) <- recvLen s (bytes)
+                 recv s 2 -- Ending CRLF
+                 yamlN <- parseYaml content
+                 return $ yamlListToHList yamlN
+
+yamlListToHList :: YamlNode -> [String]
+yamlListToHList y = elems where
+    elist = (n_elem y)
+    ESeq list = elist
+    yelems = map n_elem list
+    elems = map (\(EStr x) -> unpackBuf x) yelems
 
 yamlMapToHMap :: YamlNode -> M.Map String String
 yamlMapToHMap y = M.fromList elems where
@@ -340,16 +369,16 @@ reservedParser = do string "RESERVED"
                     y <- many1 digit
                     return (x,y)
 
--- Get number of bytes from job/server-status response string.
-parseStatsLen :: String -> Int
-parseStatsLen input =
-        case (parse statsLenParser "StatsLenParser" input) of
+-- Get number of bytes from an OK <bytes> response string.
+parseOkLen :: String -> Int
+parseOkLen input =
+        case (parse okLenParser "okLenParser" input) of
           Right len -> read len
           Left err -> 0
 
 -- Parser for first line of stats for data length indicator.
-statsLenParser :: GenParser Char st String
-statsLenParser = string "OK " >> many1 digit
+okLenParser :: GenParser Char st String
+okLenParser = string "OK " >> many1 digit
 
 -- Get job id and number of bytes from FOUND response string.
 parseFoundIdLen :: String -> (Int,Int)
