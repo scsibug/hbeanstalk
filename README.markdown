@@ -9,7 +9,7 @@ hbeanstalk is a Haskell client for the Beanstalk queue server, see <http://kr.gi
 Status
 ------
 
-This is just being hacked on in some free minutes as I get them.  Once there is some minimal functionality, I will start to cabalize and publish an API.
+All commands in the beanstalk protocol from 1.4.6 have been implemented.
 
 License
 -------
