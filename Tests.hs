@@ -35,7 +35,8 @@ tests =
      TestLabel "Watch" watchTest,
      TestLabel "Put" putTest,
      TestLabel "Put/Reserve" putReserveTest,
-     TestLabel "Put/Reserve-With-Timeout" putReserveWithTimeoutTest
+     TestLabel "Put/Reserve-With-Timeout" putReserveWithTimeoutTest,
+     TestLabel "Peek" peekTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -115,6 +116,27 @@ putReserveWithTimeoutTest =
                  rsv_job <- reserveJobWithTimeout bs 2
                  assertEqual "Reserved job should match job that was just put"
                              put_job_id (job_id rsv_job)
+             )
+
+-- Test peeking for a couple specific jobs
+peekTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 randString <- randomName
+                 let body = "My test job body, " ++ randString
+                 put_job_id <- putJob bs 1 0 60 body
+                 let next_body = "My test job body, " ++ randString
+                 put_next_job_id <- putJob bs 1 0 60 next_body
+                 peeked_job <- peekJob bs put_job_id
+                 assertEqual "Peeked job id should match job id that was just put"
+                             put_job_id (job_id peeked_job)
+                 assertEqual "Peeked job should match job that was just put"
+                             body (job_body peeked_job)
+                 next_peeked_job <- peekJob bs put_next_job_id
+                 assertEqual "Peeked job id should match job id that was just put"
+                             put_next_job_id (job_id next_peeked_job)
+                 assertEqual "Peeked job should match job that was just put"
+                             next_body (job_body next_peeked_job)
              )
 
 -- Configure a new beanstalkd connection to use&watch a single tube
