@@ -36,7 +36,8 @@ tests =
      TestLabel "Put" putTest,
      TestLabel "Put/Reserve" putReserveTest,
      TestLabel "Put/Reserve-With-Timeout" putReserveWithTimeoutTest,
-     TestLabel "Peek" peekTest
+     TestLabel "Peek" peekTest,
+     TestLabel "KickDelay" kickDelayTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -137,6 +138,16 @@ peekTest =
                              put_next_job_id (job_id next_peeked_job)
                  assertEqual "Peeked job should match job that was just put"
                              next_body (job_body next_peeked_job)
+             )
+
+kickDelayTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 randString <- randomName
+                 let body = "My test job body, " ++ randString
+                 put_job_id <- putJob bs 1 5 60 body
+                 kicked <- kick bs 1
+                 assertEqual "Kick should indicate one job kicked" 1 kicked
              )
 
 -- Configure a new beanstalkd connection to use&watch a single tube
