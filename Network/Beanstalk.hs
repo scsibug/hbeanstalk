@@ -233,6 +233,24 @@ genericPeek bs cmd = withMVar bs task
                  recv s 2 -- Ending CRLF
                  return (Job jobid content)
 
+-- Move jobs from current tube into ready queue.  If buried jobs
+-- exist, only those will be moved, otherwise delayed jobs will be
+-- made ready.  Takes as an argument the max number of jobs to kick,
+-- returns how many jobs were actually kicked.
+kick :: BeanstalkServer -> Int -> IO Int
+kick bs maxcount = withMVar bs task
+    where task s =
+              do send s ("kick "++(show maxcount))
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 return (parseKicked response)
+
+parseKicked :: String -> Int
+parseKicked input = case kparse of
+                      Right a -> read a
+                      Left _ -> 0 -- Error
+    where kparse = parse (string "KICKED " >> many1 digit) "KickedParser" input
+
 -- Read server statistics as a mapping from names to values.
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats bs = withMVar bs task
@@ -332,4 +350,3 @@ foundIdLenParser = do string "FOUND "
                       string " "
                       bytes <- many1 digit
                       return (read jobid, read bytes)
-
