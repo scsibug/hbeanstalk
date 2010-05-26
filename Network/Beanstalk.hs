@@ -12,7 +12,8 @@ module Network.Beanstalk (
   -- * Function Types
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
   deleteJob, buryJob, useTube, watchTube, ignoreTube, getServerStats,
-  printServerStats, peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kick,
+  printStats, peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kick,
+  statsJob,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -251,11 +252,13 @@ parseKicked input = case kparse of
                       Left _ -> 0 -- Error
     where kparse = parse (string "KICKED " >> many1 digit) "KickedParser" input
 
--- Read server statistics as a mapping from names to values.
-getServerStats :: BeanstalkServer -> IO (M.Map String String)
-getServerStats bs = withMVar bs task
+-- Essence of the various stats commands.  Variations provide the
+-- command, while this function actually executes it and parses the
+-- results.
+genericStats :: BeanstalkServer -> String -> IO (M.Map String String)
+genericStats bs cmd = withMVar bs task
     where task s =
-              do send s "stats\r\n"
+              do send s (cmd++"\r\n")
                  statHeader <- readLine s
                  checkForBeanstalkErrors statHeader
                  let bytes = parseStatsLen statHeader
@@ -263,6 +266,20 @@ getServerStats bs = withMVar bs task
                  recv s 2 -- Ending CRLF
                  yamlN <- parseYaml statContent
                  return $ yamlMapToHMap yamlN
+
+-- Give statistical information about a job.
+statsJob :: BeanstalkServer -> Int -> IO (M.Map String String)
+statsJob bs jobid = genericStats bs ("stats-job "++(show jobid))
+
+-- Print stats to screen in a readable format.
+printStats :: M.Map String String -> IO ()
+printStats stats =
+    do let kv = M.assocs stats
+       mapM_ (\(k,v) -> putStrLn (k ++ " => " ++ v)) kv
+
+-- Read server statistics as a mapping from names to values.
+getServerStats :: BeanstalkServer -> IO (M.Map String String)
+getServerStats bs = genericStats bs "stats"
 
 -- Print server stats to screen in a readable format.
 printServerStats :: BeanstalkServer -> IO ()
@@ -326,7 +343,7 @@ reservedParser = do string "RESERVED"
                     y <- many1 digit
                     return (x,y)
 
--- Get number of bytes from server-status response string.
+-- Get number of bytes from job/server-status response string.
 parseStatsLen :: String -> Int
 parseStatsLen input =
         case (parse statsLenParser "StatsLenParser" input) of

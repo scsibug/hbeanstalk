@@ -15,7 +15,7 @@ import Control.Monad
 
 -- Testing
 main = do bs <- connectBeanstalk "localhost" "11300"
-          printServerStats bs
+          getServerStats bs >>= printStats
           -- If server has no jobs, this should wait for 1 second and then timeout
           e <- E.tryJust (guard . isTimedOutException) (reserveJobWithTimeout bs 1)
           putStrLn (show e)
@@ -40,10 +40,11 @@ main = do bs <- connectBeanstalk "localhost" "11300"
           watchCount <- ignoreTube bs "hbeanstalk"
           putStrLn ("Now watching "++(show watchCount)++" tubes")
           job <- putJob bs 1 500 500 "hello"
+          statsJob bs job >>= printStats
           rjob <- reserveJob bs
           putStrLn ("About to try to bury job "++(show (job_id rjob)))
           buryJob bs (job_id rjob) 1
-          printServerStats bs
+          getServerStats bs >>= printStats
           rjob <- reserveJob bs
           rjob <- reserveJobWithTimeout bs 5
           releaseJob bs (job_id rjob) 1 1
