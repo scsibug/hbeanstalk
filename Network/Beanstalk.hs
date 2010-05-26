@@ -108,7 +108,8 @@ reserveJob bs = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
-                 (jobContent, bytesRead) <- recvLen s (bytes+2)
+                 (jobContent, bytesRead) <- recvLen s (bytes)
+                 recv s 2 -- Ending CRLF
                  return (Job (read jobid) jobContent)
 
 -- Reserve a job from the watched tube list, blocking for the specified number
@@ -122,7 +123,8 @@ reserveJobWithTimeout bs seconds = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
-                 (jobContent, bytesRead) <- recvLen s (bytes+2)
+                 (jobContent, bytesRead) <- recvLen s (bytes)
+                 recv s 2 -- Ending CRLF
                  return (Job (read jobid) jobContent)
 
 -- Delete a job to indicate that it has been completed.
@@ -227,7 +229,8 @@ genericPeek bs cmd = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseFoundIdLen response
-                 (content,bytesRead) <- recvLen s (bytes+2)
+                 (content,bytesRead) <- recvLen s (bytes)
+                 recv s 2 -- Ending CRLF
                  return (Job jobid content)
 
 -- Read server statistics as a mapping from names to values.
@@ -238,7 +241,8 @@ getServerStats bs = withMVar bs task
                  statHeader <- readLine s
                  checkForBeanstalkErrors statHeader
                  let bytes = parseStatsLen statHeader
-                 (statContent, bytesRead) <- recvLen s (bytes+2)
+                 (statContent, bytesRead) <- recvLen s (bytes)
+                 recv s 2 -- Ending CRLF
                  yamlN <- parseYaml statContent
                  return $ yamlMapToHMap yamlN
 
