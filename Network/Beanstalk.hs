@@ -13,7 +13,7 @@ module Network.Beanstalk (
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
   deleteJob, buryJob, useTube, watchTube, ignoreTube, getServerStats,
   printStats, peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kick,
-  statsJob,
+  statsJob, statsTube,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -270,6 +270,10 @@ genericStats bs cmd = withMVar bs task
 -- Give statistical information about a job.
 statsJob :: BeanstalkServer -> Int -> IO (M.Map String String)
 statsJob bs jobid = genericStats bs ("stats-job "++(show jobid))
+
+-- Give statistical information about a tube
+statsTube :: BeanstalkServer -> String -> IO (M.Map String String)
+statsTube bs tube = genericStats bs ("stats-tube "++tube)
 
 -- Print stats to screen in a readable format.
 printStats :: M.Map String String -> IO ()

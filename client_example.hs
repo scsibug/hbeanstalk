@@ -45,6 +45,7 @@ main = do bs <- connectBeanstalk "localhost" "11300"
           putStrLn ("About to try to bury job "++(show (job_id rjob)))
           buryJob bs (job_id rjob) 1
           getServerStats bs >>= printStats
+          statsTube bs "hbeanstalk" >>= printStats
           rjob <- reserveJob bs
           rjob <- reserveJobWithTimeout bs 5
           releaseJob bs (job_id rjob) 1 1
