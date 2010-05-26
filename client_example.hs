@@ -50,4 +50,5 @@ main = do bs <- connectBeanstalk "localhost" "11300"
           rjob <- reserveJobWithTimeout bs 5
           releaseJob bs (job_id rjob) 1 1
           listTubes bs >>= printList
+          listTubesWatched bs >>= printList
           putStrLn "exiting"

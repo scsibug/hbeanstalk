@@ -13,7 +13,7 @@ module Network.Beanstalk (
   connectBeanstalk, putJob, releaseJob, reserveJob, reserveJobWithTimeout,
   deleteJob, buryJob, useTube, watchTube, ignoreTube, peekJob, peekReadyJob,
   peekDelayedJob, peekBuriedJob, kick, statsJob, statsTube, statsServer,
-  printStats, listTubes, printList,
+  printStats, listTubes, listTubesWatched, printList,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
@@ -294,7 +294,11 @@ statsServer bs = genericStats bs "stats"
 listTubes :: BeanstalkServer -> IO [String]
 listTubes bs = genericList bs "list-tubes"
 
--- Essence of list commands.
+-- List all watched tubes.
+listTubesWatched :: BeanstalkServer -> IO [String]
+listTubesWatched bs = genericList bs "list-tubes-watched"
+
+-- Essence of list commands that return YAML lists.
 genericList :: BeanstalkServer -> String -> IO [String]
 genericList bs cmd = withMVar bs task
     where task s =
