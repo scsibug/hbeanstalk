@@ -38,7 +38,6 @@ tests =
      TestLabel "Put/Reserve-With-Timeout" putReserveWithTimeoutTest
     ]
 
-
 -- | Ensure that connection to a server works, or at least that no
 --   exceptions are thrown.
 beanstalkConnectTest =
@@ -117,8 +116,6 @@ putReserveWithTimeoutTest =
                  assertEqual "Reserved job should match job that was just put"
                              put_job_id (job_id rsv_job)
              )
-
-
 
 -- Configure a new beanstalkd connection to use&watch a single tube
 -- with a random name.

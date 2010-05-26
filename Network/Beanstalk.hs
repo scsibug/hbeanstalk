@@ -201,6 +201,35 @@ ignoreTube bs name = withMVar bs task
                  checkForBeanstalkErrors response
                  return $ parseWatching response
 
+-- Inspect a specific job in the system.
+peekJob :: BeanstalkServer -> Int -> IO Job
+peekJob bs jobid = genericPeek bs ("peek "++(show jobid))
+
+-- Inspect the next ready job.
+peekReadyJob :: BeanstalkServer -> IO Job
+peekReadyJob bs = genericPeek bs "peek-ready"
+
+-- Inspect the delayed job with shortest delay remaining.
+peekDelayedJob :: BeanstalkServer -> IO Job
+peekDelayedJob bs = genericPeek bs "peek-delayed"
+
+-- Inspect the next buried job.
+peekBuriedJob :: BeanstalkServer -> IO Job
+peekBuriedJob bs = genericPeek bs "peek-buried"
+
+-- Essence of the peek command.  Variations (peek, peek-ready,
+-- peek-delayed, peek-buried) just provide the string command, while
+-- this function actually executes it and parses the results.
+genericPeek :: BeanstalkServer -> String -> IO Job
+genericPeek bs cmd = withMVar bs task
+    where task s =
+              do send s (cmd++"\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 let (jobid, bytes) = parseFoundIdLen response
+                 (content,bytesRead) <- recvLen s (bytes+2)
+                 return (Job jobid content)
+
 -- Read server statistics as a mapping from names to values.
 getServerStats :: BeanstalkServer -> IO (M.Map String String)
 getServerStats bs = withMVar bs task
@@ -285,3 +314,18 @@ parseStatsLen input =
 -- Parser for first line of stats for data length indicator.
 statsLenParser :: GenParser Char st String
 statsLenParser = string "OK " >> many1 digit
+
+-- Get job id and number of bytes from FOUND response string.
+parseFoundIdLen :: String -> (Int,Int)
+parseFoundIdLen input =
+    case (parse foundIdLenParser "FoundIdLenParser" input) of
+      Right x -> x
+      Left _ -> (0,0)
+
+foundIdLenParser :: GenParser Char st (Int,Int)
+foundIdLenParser = do string "FOUND "
+                      jobid <- many1 digit
+                      string " "
+                      bytes <- many1 digit
+                      return (read jobid, read bytes)
+
