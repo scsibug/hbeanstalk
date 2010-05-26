@@ -39,6 +39,8 @@ data Job = Job {job_id :: Int,
                 job_body :: String}
            deriving (Show, Read)
 
+-- Job states
+data JobState = READY | RESERVED | DELAYED | BURIED
 
 -- Exceptions from Beanstalk
 data BeanstalkException = NotFoundException | OutOfMemoryException |
@@ -84,8 +86,8 @@ connectBeanstalk hostname port =
 
 -- Put a new job on the current tube that was selected with useTube.
 -- Specify numeric priority, delay before becoming active, a limit
--- on the time-to-run, and a job body.
-putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO Int
+-- on the time-to-run, and a job body.  Returns job state and ID.
+putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO (JobState, Int)
 putJob bs priority delay ttr job_body = withMVar bs task
     where task s =
               do let job_size = length job_body
@@ -97,8 +99,8 @@ putJob bs priority delay ttr job_body = withMVar bs task
                  send s (job_body ++ "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
-                 let jobid = parsePut response
-                 return jobid
+                 let (state, jobid) = parsePut response
+                 return (state, jobid)
 
 -- Reserve a new job from the watched tube list, blocking until one becomes
 -- available.
@@ -376,11 +378,19 @@ parseWatching input =
       Left _ -> 0
 
 -- Parse response from bury command.
-parsePut :: String -> Int
+parsePut :: String -> (JobState, Int)
 parsePut input =
-    case (parse (string "INSERTED " >> many1 digit) "PutParser" input) of
-      Right x -> read x
-      Left _ -> 0
+    case (parse putParser "PutParser" input) of
+      Right x -> x
+      Left _ -> (READY, 0) -- Error
+
+putParser = do stateStr <- many1 letter
+               char ' '
+               jobid <- many1 digit
+               let state = case stateStr of
+                             "BURIED" -> BURIED
+                             _ -> READY
+               return (state, read jobid)
 
 -- Get Job ID and size.
 parseReserve :: String -> (String,Int)
