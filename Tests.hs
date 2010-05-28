@@ -20,6 +20,8 @@ import Control.Concurrent.MVar
 import Network.Socket
 import Test.HUnit
 import System.Random (randomIO)
+import Data.Maybe(fromJust)
+import qualified Data.Map as M
 
 bs_host = "localhost"
 bs_port = "11300"
@@ -37,7 +39,8 @@ tests =
      TestLabel "Put/Reserve" putReserveTest,
      TestLabel "Put/Reserve-With-Timeout" putReserveWithTimeoutTest,
      TestLabel "Peek" peekTest,
-     TestLabel "KickDelay" kickDelayTest
+     TestLabel "KickDelay" kickDelayTest,
+     TestLabel "Release" releaseTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -149,6 +152,31 @@ kickDelayTest =
                  kicked <- kick bs 1
                  assertEqual "Kick should indicate one job kicked" 1 kicked
              )
+
+releaseTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 assertReadyJobs bs tt 0 "New tube has no jobs"
+                 -- Put a job on the tube
+                 randString <- randomName
+                 let body = "My test job body, " ++ randString
+                 (_,put_job_id) <- putJob bs 1 0 60 body
+                 assertReadyJobs bs tt 1 "Put adds job to tube"
+                 -- Reserve the job
+                 rj <- reserveJob bs
+                 assertReadyJobs bs tt 0 "Reserve removes ready job"
+                 -- Release it
+                 releaseJob bs (job_id rj) 1 0
+                 assertReadyJobs bs tt 1 "Release puts job back to ready"
+              )
+
+-- Assert a number of ready jobs on a given tube
+assertReadyJobs :: BeanstalkServer -> String -> Int -> String -> IO ()
+assertReadyJobs bs tube jobs msg =
+    do ts <- statsTube bs tube
+       let jobsReady = read (fromJust (M.lookup "current-jobs-ready" ts))
+       assertEqual msg jobs jobsReady
+
 
 -- Configure a new beanstalkd connection to use&watch a single tube
 -- with a random name.
