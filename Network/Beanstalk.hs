@@ -14,10 +14,11 @@ module Network.Beanstalk (
   deleteJob, buryJob, useTube, watchTube, ignoreTube, peekJob, peekReadyJob,
   peekDelayedJob, peekBuriedJob, kick, statsJob, statsTube, statsServer,
   printStats, listTubes, listTubesWatched, listTubeUsed, printList,
+  jobCountWithStatus,
   -- * Exception Predicates
   isNotFoundException, isTimedOutException,
   -- * Data Types
-  Job(..), BeanstalkServer
+  Job(..), BeanstalkServer, JobState(..)
   ) where
 
 import Data.Bits
@@ -41,6 +42,7 @@ data Job = Job {job_id :: Int,
 
 -- Job states
 data JobState = READY | RESERVED | DELAYED | BURIED
+              deriving (Show, Read, Eq)
 
 -- Exceptions from Beanstalk
 data BeanstalkException = NotFoundException | OutOfMemoryException |
@@ -309,7 +311,7 @@ listTubeUsed bs = withMVar bs task
                  checkForBeanstalkErrors response
                  let tubeName = parseUsedTube response
                  return tubeName
- 
+
 parseUsedTube :: String -> String
 parseUsedTube input =
     case (parse usedTubeParser "UsedTubeParser" input) of
@@ -338,6 +340,24 @@ genericList bs cmd = withMVar bs task
                  recv s 2 -- Ending CRLF
                  yamlN <- parseYaml content
                  return $ yamlListToHList yamlN
+
+-- Count number of jobs in a tube with a status in a given list
+jobCountWithStatus :: BeanstalkServer -> String -> [JobState] -> IO Int
+jobCountWithStatus bs tube validStatuses =
+    do ts <- statsTube bs tube
+       let readyCount = case (elem READY validStatuses) of
+                          True -> read (fromJust (M.lookup "current-jobs-ready" ts))
+                          False -> 0
+       let reservedCount = case (elem RESERVED validStatuses) of
+                          True -> read (fromJust (M.lookup "current-jobs-reserved" ts))
+                          False -> 0
+       let delayedCount = case (elem DELAYED validStatuses) of
+                          True -> read (fromJust (M.lookup "current-jobs-delayed" ts))
+                          False -> 0
+       let buriedCount = case (elem BURIED validStatuses) of
+                          True -> read (fromJust (M.lookup "current-jobs-buried" ts))
+                          False -> 0
+       return (readyCount+reservedCount+delayedCount+buriedCount)
 
 yamlListToHList :: YamlNode -> [String]
 yamlListToHList y = elems where
