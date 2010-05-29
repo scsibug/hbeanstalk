@@ -36,11 +36,13 @@ tests =
      TestLabel "Use" useTest,
      TestLabel "Watch" watchTest,
      TestLabel "Put" putTest,
+     TestLabel "Put2" putTest2,
      TestLabel "Put/Reserve" putReserveTest,
      TestLabel "Put/Reserve-With-Timeout" putReserveWithTimeoutTest,
      TestLabel "Peek" peekTest,
      TestLabel "KickDelay" kickDelayTest,
-     TestLabel "Release" releaseTest
+     TestLabel "Release" releaseTest,
+     TestLabel "Ignore" ignoreTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -94,10 +96,21 @@ ignoreTest =
 putTest =
     TestCase (
               do bs <- connectBeanstalk bs_host bs_port
-                 job <- putJob bs 1 0 60 "body"
+                 (state, jobid) <- putJob bs 1 0 60 "body"
                  return ()
              )
 
+-- More exhaustive test of Put in a new tube
+putTest2 =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 assertReadyJobs bs tt 0 "Initially, no jobs"
+                 (state, jobid) <- putJob bs 1 0 60 "body"
+                 -- Technically could be BURIED, but only if memory exhausted.
+                 assertEqual "New job is in state READY" READY state
+                 assertReadyJobs bs tt 1 "Put creates a ready job in the tube"
+                 return ()
+             )
 -- Test putting and then reserving a job
 putReserveTest =
     TestCase (
@@ -106,6 +119,8 @@ putReserveTest =
                  let body = "My test job body, " ++ randString
                  (_,put_job_id) <- putJob bs 1 0 60 body
                  rsv_job <- reserveJob bs
+                 assertEqual "Reserved job ID should match what was put" put_job_id (job_id rsv_job)
+                 assertEqual "Reserved job body should match what was put" body (job_body rsv_job)
                  assertEqual "Reserved job should match job that was just put"
                              put_job_id (job_id rsv_job)
              )
