@@ -43,7 +43,8 @@ tests =
      TestLabel "KickDelay" kickDelayTest,
      TestLabel "Release" releaseTest,
      TestLabel "Ignore" ignoreTest,
-     TestLabel "Delete" deleteTest
+     TestLabel "Delete" deleteTest,
+     TestLabel "Bury" buryTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -197,6 +198,18 @@ deleteTest =
                  assertJobsCount bs tt [RESERVED] 1 "Only job on tube is reserved"
                  deleteJob bs (job_id job)
                  assertJobsCount bs tt [READY,RESERVED,DELAYED,BURIED] 0 "Tube is empty"
+             )
+
+buryTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 assertJobsCount bs tt [READY] 0 "New tube has no jobs"
+                 (_,put_job_id) <- putJob bs 1 0 60 "new job"
+                 assertJobsCount bs tt [READY] 1 "Put creates new ready job"
+                 job <- reserveJob bs
+                 assertJobsCount bs tt [RESERVED] 1 "Only job on tube is reserved"
+                 buryJob bs (job_id job) 1
+                 assertJobsCount bs tt [BURIED] 1 "Job is buried"
              )
 
 -- Assert a number of jobs on a given tube with one of the states
