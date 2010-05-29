@@ -42,7 +42,8 @@ tests =
      TestLabel "Peek" peekTest,
      TestLabel "KickDelay" kickDelayTest,
      TestLabel "Release" releaseTest,
-     TestLabel "Ignore" ignoreTest
+     TestLabel "Ignore" ignoreTest,
+     TestLabel "Delete" deleteTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -104,11 +105,11 @@ putTest =
 putTest2 =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
-                 assertReadyJobs bs tt 0 "Initially, no jobs"
+                 assertJobsCount bs tt [READY] 0 "Initially, no jobs"
                  (state, jobid) <- putJob bs 1 0 60 "body"
                  -- Technically could be BURIED, but only if memory exhausted.
                  assertEqual "New job is in state READY" READY state
-                 assertReadyJobs bs tt 1 "Put creates a ready job in the tube"
+                 assertJobsCount bs tt [READY] 1 "Put creates a ready job in the tube"
                  return ()
              )
 -- Test putting and then reserving a job
@@ -171,25 +172,39 @@ kickDelayTest =
 releaseTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
-                 assertReadyJobs bs tt 0 "New tube has no jobs"
+                 assertJobsCount bs tt [READY] 0 "New tube has no jobs"
                  -- Put a job on the tube
                  randString <- randomName
                  let body = "My test job body, " ++ randString
                  (_,put_job_id) <- putJob bs 1 0 60 body
-                 assertReadyJobs bs tt 1 "Put adds job to tube"
+                 assertJobsCount bs tt [READY] 1 "Put adds job to tube"
                  -- Reserve the job
                  rj <- reserveJob bs
-                 assertReadyJobs bs tt 0 "Reserve removes ready job"
+                 assertJobsCount bs tt [READY] 0 "Reserve removes ready job"
+                 assertJobsCount bs tt [RESERVED] 1 "Single reserved job"
                  -- Release it
                  releaseJob bs (job_id rj) 1 0
-                 assertReadyJobs bs tt 1 "Release puts job back to ready"
+                 assertJobsCount bs tt [READY] 1 "Release puts job back to ready"
               )
 
--- Assert a number of ready jobs on a given tube
-assertReadyJobs :: BeanstalkServer -> String -> Int -> String -> IO ()
-assertReadyJobs bs tube jobs msg =
+deleteTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 assertJobsCount bs tt [READY] 0 "New tube has no jobs"
+                 (_,put_job_id) <- putJob bs 1 0 60 "new job"
+                 assertJobsCount bs tt [READY] 1 "Put creates new ready job"
+                 job <- reserveJob bs
+                 assertJobsCount bs tt [RESERVED] 1 "Only job on tube is reserved"
+                 deleteJob bs (job_id job)
+                 assertJobsCount bs tt [READY,RESERVED,DELAYED,BURIED] 0 "Tube is empty"
+             )
+
+-- Assert a number of jobs on a given tube with one of the states
+-- listed.
+assertJobsCount :: BeanstalkServer -> String -> [JobState] -> Int -> String -> IO ()
+assertJobsCount bs tube states jobs msg =
     do ts <- statsTube bs tube
-       let jobsReady = read (fromJust (M.lookup "current-jobs-ready" ts))
+       jobsReady <- jobCountWithStatus bs tube states
        assertEqual msg jobs jobsReady
 
 
