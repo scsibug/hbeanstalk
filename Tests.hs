@@ -45,7 +45,8 @@ tests =
      TestLabel "Ignore" ignoreTest,
      TestLabel "Delete" deleteTest,
      TestLabel "Bury" buryTest,
-     TestLabel "PeekReady" peekReadyTest
+     TestLabel "PeekReady" peekReadyTest,
+     TestLabel "PeekJob" peekJobTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -222,6 +223,19 @@ peekReadyTest =
                  job <- peekReadyJob bs
                  assertJobsCount bs tt [READY] 1 "Job is still ready"
                  assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
+             )
+peekJobTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 assertJobsCount bs tt [READY] 0 "New tube has no jobs"
+                 randString <- randomName
+                 let jobcontent = "new job "++randString
+                 (_,put_job_id) <- putJob bs 1 0 60 jobcontent
+                 assertJobsCount bs tt [READY] 1 "Put creates new ready job"
+                 job <- peekJob bs put_job_id
+                 assertJobsCount bs tt [READY] 1 "Job is still ready"
+                 assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
+                 assertEqual "Peeked job content is same as put job" jobcontent (job_body job)
              )
 
 -- Assert a number of jobs on a given tube with one of the states
