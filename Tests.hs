@@ -52,7 +52,8 @@ tests =
      TestLabel "StatsJob" statsJobTest,
      TestLabel "ServerStats" statsTest,
      TestLabel "ListTubes" listTubesTest,
-     TestLabel "ListTubesWatched" listTubesWatchedTest
+     TestLabel "ListTubesWatched" listTubesWatchedTest,
+     TestLabel "ListTubeUsed" listTubeUsedTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -316,6 +317,13 @@ listTubesWatchedTest =
                  assertBool "Newly created/watched tube is in watch list" (elem tt tubes)
                  ignoreTube bs tt
                  assertBool "Ignored tube is not in watch list" (elem tt tubes)
+             )
+
+listTubeUsedTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 tu <- listTubeUsed bs
+                 assertEqual "Used tube" tt tu
              )
 
 -- Assert a number of jobs on a given tube with one of the states
