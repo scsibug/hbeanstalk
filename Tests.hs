@@ -46,7 +46,9 @@ tests =
      TestLabel "Delete" deleteTest,
      TestLabel "Bury" buryTest,
      TestLabel "PeekReady" peekReadyTest,
-     TestLabel "PeekJob" peekJobTest
+     TestLabel "PeekJob" peekJobTest,
+     TestLabel "PeekDelayed" peekDelayedTest,
+     TestLabel "PeekBuried" peekBuriedTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -224,6 +226,7 @@ peekReadyTest =
                  assertJobsCount bs tt [READY] 1 "Job is still ready"
                  assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
              )
+
 peekJobTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -236,6 +239,32 @@ peekJobTest =
                  assertJobsCount bs tt [READY] 1 "Job is still ready"
                  assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
                  assertEqual "Peeked job content is same as put job" jobcontent (job_body job)
+             )
+
+peekDelayedTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 assertJobsCount bs tt [READY] 0 "New tube has no jobs"
+                 (_,put_job_id) <- putJob bs 1 120 60 "new job"
+                 assertJobsCount bs tt [DELAYED] 1 "Put with delay"
+                 job <- peekDelayedJob bs
+                 assertJobsCount bs tt [DELAYED] 1 "Job is still delayed"
+                 assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
+             )
+
+peekBuriedTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 assertJobsCount bs tt [READY] 0 "New tube has no jobs"
+                 (_,put_job_id) <- putJob bs 1 0 60 "new job"
+                 assertJobsCount bs tt [READY] 1 "Put creates new ready job"
+                 rsv_job <- reserveJob bs
+                 assertJobsCount bs tt [RESERVED] 1 "Reserved job"
+                 buryJob bs put_job_id 1
+                 assertJobsCount bs tt [BURIED] 1 "Burid job"
+                 job <- peekBuriedJob bs
+                 assertJobsCount bs tt [BURIED] 1 "Job is still buried"
+                 assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
              )
 
 -- Assert a number of jobs on a given tube with one of the states
