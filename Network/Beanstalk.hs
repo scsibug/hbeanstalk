@@ -16,9 +16,9 @@ module Network.Beanstalk (
   printStats, listTubes, listTubesWatched, listTubeUsed, printList,
   jobCountWithStatus,
   -- * Exception Predicates
-  isNotFoundException, isTimedOutException,
+  isNotFoundException, isBadFormatException, isTimedOutException,
   -- * Data Types
-  Job(..), BeanstalkServer, JobState(..)
+  Job(..), BeanstalkServer, JobState(..), BeanstalkException(..)
   ) where
 
 import Data.Bits
