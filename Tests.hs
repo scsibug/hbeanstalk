@@ -48,7 +48,8 @@ tests =
      TestLabel "PeekReady" peekReadyTest,
      TestLabel "PeekJob" peekJobTest,
      TestLabel "PeekDelayed" peekDelayedTest,
-     TestLabel "PeekBuried" peekBuriedTest
+     TestLabel "PeekBuried" peekBuriedTest,
+     TestLabel "StatsJob" statsJobTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -265,6 +266,16 @@ peekBuriedTest =
                  job <- peekBuriedJob bs
                  assertJobsCount bs tt [BURIED] 1 "Job is still buried"
                  assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
+             )
+
+statsJobTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 let priority = 99
+                 (job_state ,put_job_id) <- putJob bs priority 0 60 "new job"
+                 job_stats <- statsJob bs put_job_id
+                 assertEqual "Job ID matches" put_job_id (read (fromJust (M.lookup "id" job_stats)))
+                 assertEqual "Job priority matches" priority (read (fromJust (M.lookup "pri" job_stats)))
              )
 
 -- Assert a number of jobs on a given tube with one of the states
