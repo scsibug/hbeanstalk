@@ -49,7 +49,8 @@ tests =
      TestLabel "PeekJob" peekJobTest,
      TestLabel "PeekDelayed" peekDelayedTest,
      TestLabel "PeekBuried" peekBuriedTest,
-     TestLabel "StatsJob" statsJobTest
+     TestLabel "StatsJob" statsJobTest,
+     TestLabel "ServerStats" statsTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -276,6 +277,13 @@ statsJobTest =
                  job_stats <- statsJob bs put_job_id
                  assertEqual "Job ID matches" put_job_id (read (fromJust (M.lookup "id" job_stats)))
                  assertEqual "Job priority matches" priority (read (fromJust (M.lookup "pri" job_stats)))
+             )
+
+statsTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 stats <- statsServer bs
+                 assertBool "More than 1 job has been created" (1 < (read (fromJust (M.lookup "total-jobs" stats))))
              )
 
 -- Assert a number of jobs on a given tube with one of the states
