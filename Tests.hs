@@ -58,7 +58,8 @@ tests =
      TestLabel "ListTubeUsed" listTubeUsedTest,
      TestLabel "isNotfoundException" isNotFoundExceptionTest,
      TestLabel "isBadFormatException" isBadFormatxceptionTest,
-     TestLabel "isTimedOutException" isTimedOutExceptionTest
+     TestLabel "isTimedOutException" isTimedOutExceptionTest,
+     TestLabel "AllExceptions" allExceptionTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -363,6 +364,44 @@ isTimedOutExceptionTest =
                    Left _ -> return ()
              )
 
+-- Test all exception predicates to make sure they return false when
+-- there are no errors.
+allExceptionTest =
+ TestCase (
+           do (bs, tt) <- connectAndSelectRandomTube
+              e <- E.tryJust (guard . isNotFoundException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "Erroneous not found exception"
+              e <- E.tryJust (guard . isBadFormatException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "Erroneous bad format exception"
+              e <- E.tryJust (guard . isTimedOutException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "Erroneous timed out exception"
+              e <- E.tryJust (guard . isOutOfMemoryException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "(possible) Erroneous out of memory exception"
+              e <- E.tryJust (guard . isInternalErrorException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "(possible) Erroneous internal error exception"
+              e <- E.tryJust (guard . isJobTooBigException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "Erroneous job too big exception"
+              e <- E.tryJust (guard . isDeadlineSoonException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "Erroneous deadline soon exception"
+              e <- E.tryJust (guard . isNotIgnoredException) (putJob bs 1 0 600 "test")
+              case e of
+                Right _ -> return ()
+                Left _ -> assertFailure "Erroneous not ignored exception"
+          )
 
 -- Assert a number of jobs on a given tube with one of the states
 -- listed.
