@@ -40,7 +40,7 @@ type BeanstalkServer = MVar Socket
 
 data Job = Job {job_id :: Int,
                 job_body :: String}
-           deriving (Show, Read)
+           deriving (Show, Read, Eq)
 
 -- Job states
 data JobState = READY | RESERVED | DELAYED | BURIED
