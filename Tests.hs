@@ -51,7 +51,8 @@ tests =
      TestLabel "PeekBuried" peekBuriedTest,
      TestLabel "StatsJob" statsJobTest,
      TestLabel "ServerStats" statsTest,
-     TestLabel "ListTubes" listTubesTest
+     TestLabel "ListTubes" listTubesTest,
+     TestLabel "ListTubesWatched" listTubesWatchedTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -302,6 +303,19 @@ listTubesTest =
               do (bs, tt) <- connectAndSelectRandomTube
                  tubes <- listTubes bs
                  assertBool "Newly created tube is in list" (elem tt tubes)
+             )
+
+-- Test listing all watched tubes.
+listTubesWatchedTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 -- Watch another tube so that we avaid NotIgnoredExceptions
+                 otherTube <- randomName
+                 watchTube bs otherTube
+                 tubes <- listTubesWatched bs
+                 assertBool "Newly created/watched tube is in watch list" (elem tt tubes)
+                 ignoreTube bs tt
+                 assertBool "Ignored tube is not in watch list" (elem tt tubes)
              )
 
 -- Assert a number of jobs on a given tube with one of the states
