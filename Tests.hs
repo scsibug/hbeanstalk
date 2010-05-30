@@ -50,7 +50,8 @@ tests =
      TestLabel "PeekDelayed" peekDelayedTest,
      TestLabel "PeekBuried" peekBuriedTest,
      TestLabel "StatsJob" statsJobTest,
-     TestLabel "ServerStats" statsTest
+     TestLabel "ServerStats" statsTest,
+     TestLabel "ListTubes" listTubesTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -165,7 +166,7 @@ peekTest =
                  assertEqual "Peeked job should match job that was just put"
                              next_body (job_body next_peeked_job)
              )
-
+-- Test kicking a delayed job.
 kickDelayTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -176,6 +177,7 @@ kickDelayTest =
                  assertEqual "Kick should indicate one job kicked" 1 kicked
              )
 
+-- Test putting a job, reserving it, and then releasing it back to the tube.
 releaseTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -194,6 +196,7 @@ releaseTest =
                  assertJobsCount bs tt [READY] 1 "Release puts job back to ready"
               )
 
+-- Test deleting a reserved job.
 deleteTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -206,6 +209,7 @@ deleteTest =
                  assertJobsCount bs tt [READY,RESERVED,DELAYED,BURIED] 0 "Tube is empty"
              )
 
+-- Test burying a reserved job.
 buryTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -218,6 +222,7 @@ buryTest =
                  assertJobsCount bs tt [BURIED] 1 "Job is buried"
              )
 
+-- Test peeking to find the next ready job.
 peekReadyTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -229,6 +234,7 @@ peekReadyTest =
                  assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
              )
 
+-- Test peeking to find definition of a specific queued job.
 peekJobTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -243,6 +249,7 @@ peekJobTest =
                  assertEqual "Peeked job content is same as put job" jobcontent (job_body job)
              )
 
+-- Test peeking to find the next delayed job.
 peekDelayedTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -254,6 +261,7 @@ peekDelayedTest =
                  assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
              )
 
+-- Test peeking to find the next buried job.
 peekBuriedTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -269,6 +277,7 @@ peekBuriedTest =
                  assertEqual "Peeked job id is same as put job" put_job_id (job_id job)
              )
 
+-- Test finding information on a specific job.
 statsJobTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
@@ -279,11 +288,20 @@ statsJobTest =
                  assertEqual "Job priority matches" priority (read (fromJust (M.lookup "pri" job_stats)))
              )
 
+-- Test finding server statistics.
 statsTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  stats <- statsServer bs
                  assertBool "More than 1 job has been created" (1 < (read (fromJust (M.lookup "total-jobs" stats))))
+             )
+
+-- Test listing all tubes for the server.
+listTubesTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 tubes <- listTubes bs
+                 assertBool "Newly created tube is in list" (elem tt tubes)
              )
 
 -- Assert a number of jobs on a given tube with one of the states
