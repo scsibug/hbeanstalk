@@ -22,6 +22,8 @@ import Test.HUnit
 import System.Random (randomIO)
 import Data.Maybe(fromJust)
 import qualified Data.Map as M
+import qualified Control.Exception as E
+import Control.Monad
 
 bs_host = "localhost"
 bs_port = "11300"
@@ -53,7 +55,10 @@ tests =
      TestLabel "ServerStats" statsTest,
      TestLabel "ListTubes" listTubesTest,
      TestLabel "ListTubesWatched" listTubesWatchedTest,
-     TestLabel "ListTubeUsed" listTubeUsedTest
+     TestLabel "ListTubeUsed" listTubeUsedTest,
+     TestLabel "isNotfoundException" isNotFoundExceptionTest,
+     TestLabel "isBadFormatException" isBadFormatxceptionTest,
+     TestLabel "isTimedOutException" isTimedOutExceptionTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
@@ -319,12 +324,45 @@ listTubesWatchedTest =
                  assertBool "Ignored tube is not in watch list" (elem tt tubes)
              )
 
+-- Test listing the currently used tube.
 listTubeUsedTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  tu <- listTubeUsed bs
                  assertEqual "Used tube" tt tu
              )
+
+-- Test that NotFoundException is thrown
+isNotFoundExceptionTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 e <- E.tryJust (guard . isNotFoundException) (deleteJob bs 999999)
+                 case e of
+                   Right _ -> assertFailure "Deleting non-existent job should fail"
+                   Left _ -> return ()
+             )
+
+-- Test that BadFormatException is thrown
+isBadFormatxceptionTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 rname <- randomName
+                 e <- E.tryJust (guard . isBadFormatException) (statsTube bs ("-"++rname))
+                 case e of
+                   Right _ -> assertFailure "Using tube name starting with hyphen should fail"
+                   Left _ -> return ()
+             )
+
+-- Test that TimedOutException is thrown
+isTimedOutExceptionTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 e <- E.tryJust (guard . isTimedOutException) (reserveJobWithTimeout bs 1)
+                 case e of
+                   Right _ -> assertFailure "Reserve with no jobs causes timeout"
+                   Left _ -> return ()
+             )
+
 
 -- Assert a number of jobs on a given tube with one of the states
 -- listed.
