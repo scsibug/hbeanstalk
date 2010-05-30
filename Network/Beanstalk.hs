@@ -17,6 +17,8 @@ module Network.Beanstalk (
   jobCountWithStatus,
   -- * Exception Predicates
   isNotFoundException, isBadFormatException, isTimedOutException,
+  isOutOfMemoryException, isInternalErrorException, isJobTooBigException,
+  isDeadlineSoonException, isNotIgnoredException,
   -- * Data Types
   Job(..), BeanstalkServer, JobState(..), BeanstalkException(..)
   ) where
@@ -51,23 +53,35 @@ data BeanstalkException = NotFoundException | OutOfMemoryException |
                           JobTooBigException | ExpectedCRLFException |
                           DeadlineSoonException | TimedOutException |
                           NotIgnoredException
-    deriving (Show, Typeable)
+    deriving (Show, Typeable, Eq)
 instance E.Exception BeanstalkException
 
 isNotFoundException :: BeanstalkException -> Bool
-isNotFoundException be = case be of
-                           NotFoundException -> True
-                           _ -> False
+isNotFoundException = (==) NotFoundException
+
+isOutOfMemoryException :: BeanstalkException -> Bool
+isOutOfMemoryException = (==) OutOfMemoryException
+
+isInternalErrorException :: BeanstalkException -> Bool
+isInternalErrorException = (==) InternalErrorException
+
+isDrainingException :: BeanstalkException -> Bool
+isDrainingException = (==) DrainingException
 
 isBadFormatException :: BeanstalkException -> Bool
-isBadFormatException be = case be of
-                            BadFormatException -> True
-                            _ -> False
+isBadFormatException = (==) BadFormatException
+
+isJobTooBigException :: BeanstalkException -> Bool
+isJobTooBigException = (==) JobTooBigException
+
+isDeadlineSoonException :: BeanstalkException -> Bool
+isDeadlineSoonException = (==) DeadlineSoonException
 
 isTimedOutException :: BeanstalkException -> Bool
-isTimedOutException be = case be of
-                           TimedOutException -> True
-                           _ -> False
+isTimedOutException = (==) TimedOutException
+
+isNotIgnoredException :: BeanstalkException -> Bool
+isNotIgnoredException = (==) NotIgnoredException
 
 -- Connect to a beanstalkd server.
 connectBeanstalk :: HostName
@@ -397,7 +411,7 @@ parseWatching input =
       Right x -> read x
       Left _ -> 0
 
--- Parse response from bury command.
+-- Parse response from put command.
 parsePut :: String -> (JobState, Int)
 parsePut input =
     case (parse putParser "PutParser" input) of
