@@ -420,7 +420,7 @@ disconnectTest =
 assertJobsCount :: BeanstalkServer -> String -> [JobState] -> Int -> String -> IO ()
 assertJobsCount bs tube states jobs msg =
     do ts <- statsTube bs tube
-       jobsReady <- jobCountWithStatus bs tube states
+       jobsReady <- jobCountWithState bs tube states
        assertEqual msg jobs jobsReady
 
 
