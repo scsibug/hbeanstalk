@@ -184,7 +184,7 @@ putJob :: BeanstalkServer -- ^ Beanstalk server
              --   will be placed back on the ready queue.  The minimum
              --   value is 1.
        -> String -- ^ Job body.
-       -> IO (JobState, Int)
+       -> IO (JobState, Int) -- ^ State of the newly created job and its ID
 putJob bs priority delay ttr job_body = withMVar bs task
     where task s =
               do let job_size = length job_body
