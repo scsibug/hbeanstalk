@@ -15,7 +15,8 @@ module Network.Beanstalk (
   putJob, releaseJob, reserveJob, reserveJobWithTimeout, deleteJob, buryJob,
   peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kickJobs, touchJob,
   -- * Beanstalk Tube Commands
-  useTube, watchTube, ignoreTube, listTubes, listTubesWatched, listTubeUsed,
+  useTube, watchTube, ignoreTube, pauseTube, listTubes, listTubesWatched,
+  listTubeUsed,
   -- * Beanstalk Stats Commands
   statsJob, statsTube, statsServer, jobCountWithState,
   -- * Pretty-Printing Stats and Lists
@@ -605,6 +606,18 @@ printList list =
 statsServer :: BeanstalkServer -- ^ Beanstalk server
             -> IO (M.Map String String) -- ^ Key-value map of server statistics
 statsServer bs = genericStats bs "stats"
+
+-- | Pause a tube for a specified time, so that reservations are no longer accepted.
+pauseTube :: BeanstalkServer -- ^ Beanstalk server
+          -> String -- ^ Name of tube to pause
+          -> Int -- ^ Number of seconds before reservations are accepted again
+          -> IO ()
+pauseTube bs tube delay = withMVar bs task
+    where task s =
+              do send s ("pause-tube "++tube++" "++(show delay)++"\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 return ()
 
 -- | List all existing tubes.
 listTubes :: BeanstalkServer -- ^ Beanstalk server

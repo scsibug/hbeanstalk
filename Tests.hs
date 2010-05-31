@@ -58,6 +58,7 @@ tests =
      TestLabel "ListTubesWatched" listTubesWatchedTest,
      TestLabel "ListTubeUsed" listTubeUsedTest,
      TestLabel "Touch" touchJobTest,
+     TestLabel "Pause" pauseTubeTest,
      TestLabel "isNotfoundException" isNotFoundExceptionTest,
      TestLabel "isBadFormatException" isBadFormatxceptionTest,
      TestLabel "isTimedOutException" isTimedOutExceptionTest,
@@ -349,6 +350,19 @@ touchJobTest =
                  let ttr_before = ((read (fromJust (M.lookup "time-left" jobstat_before)))::Int)
                  let ttr_after = ((read (fromJust (M.lookup "time-left" jobstat_after)))::Int)
                  assertBool "TTR extended by touch" (ttr_after >= ttr_before)
+             )
+
+-- Test pausing a tube.
+pauseTubeTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 tubestat_before <- statsTube bs tt
+                 pauseTube bs tt 1000
+                 tubestat_after <- statsTube bs tt
+                 let paused_rem = ((read (fromJust (M.lookup "pause-time-left" tubestat_after)))::Int)
+                 -- Check that at least 990 seconds still remains of the
+                 -- original 1000 seconds we paused the tube for.
+                 assertBool "Tube has at least 990 seconds before un-pausing" (paused_rem > 990)
              )
 
 -- Test that NotFoundException is thrown
