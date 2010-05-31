@@ -11,10 +11,11 @@ Homepage:       http://github.com/scsibug/hbeanstalk/
 Category:       Network
 Stability:      Alpha
 build-type:     Simple
-Synopsis:       Client for the beanstalkd workqueue service: let Haskell do your heavy lifting!
+Synopsis:       Client for the beanstalkd workqueue service.
 Description:    This is the hbeanstalk library.  It provides a client
                 interface to a beanstalkd server, allowing Haskell to be
-                a producer and/or a consumer of work items.
+                a producer and/or a consumer of work items.  Let Haskell
+                do your heavy lifting!
 extra-source-files: README.markdown, Tests.hs
 
 source-repository head
