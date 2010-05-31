@@ -434,6 +434,7 @@ statsJob bs jobid = genericStats bs ("stats-job "++(show jobid))
 
 -- | Return statistical information about a tube.  Keys that can be
 --   expected to be returned are the following:
+--
 --   [@name@] Name of the tube
 --
 --   [@current-jobs-urgent@] Number of jobs in this tube with state
