@@ -17,7 +17,7 @@ module Network.Beanstalk (
   -- * Beanstalk Tube Commands
   useTube, watchTube, ignoreTube, listTubes, listTubesWatched, listTubeUsed,
   -- * Beanstalk Stats Commands
-  statsJob, statsTube, statsServer, jobCountWithStatus,
+  statsJob, statsTube, statsServer, jobCountWithState,
   -- * Pretty-Printing Stats and Lists
   printStats, printList,
   -- * Exception Predicates
@@ -247,7 +247,11 @@ deleteJob bs jobid = withMVar bs task
                  checkForBeanstalkErrors response
 
 -- | Indicate that a job should be released back to the tube for another consumer.
-releaseJob :: BeanstalkServer -> Int -> Int -> Int -> IO ()
+releaseJob :: BeanstalkServer -- ^ Beanstalk server
+           -> Int -- ^ ID of the job to release
+           -> Int -- ^ New priority to assign the job
+           -> Int -- ^ Delay before the job is placed on the ready queue
+           -> IO ()
 releaseJob bs jobid priority delay = withMVar bs task
     where task s =
               do send s ("release " ++
@@ -258,14 +262,18 @@ releaseJob bs jobid priority delay = withMVar bs task
                  checkForBeanstalkErrors response
 
 -- | Bury a job so that it cannot be reserved.
-buryJob :: BeanstalkServer -> Int -> Int -> IO ()
+buryJob :: BeanstalkServer -- ^ Beanstalk server
+        -> Int -- ^ ID of the job to bury
+        -> Int -- ^ New priority to assign the job
+        -> IO ()
 buryJob bs jobid pri = withMVar bs task
     where task s =
               do send s ("bury "++(show jobid)++" "++(show pri)++"\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
 
-checkForBeanstalkErrors :: String -> IO ()
+checkForBeanstalkErrors :: String -- ^ beanstalkd server response
+                        -> IO ()
 checkForBeanstalkErrors input =
     do eop OutOfMemoryException "OUT_OF_MEMORY\r\n"
        eop InternalErrorException "INTERNAL_ERROR\r\n"
@@ -286,16 +294,23 @@ exceptionOnParse e x = case x of
                     Right _ -> E.throwIO e
                     Left _ -> return ()
 
--- | Assign a tube for new jobs created with put command.
-useTube :: BeanstalkServer -> String -> IO ()
+-- | Assign a tube for new jobs created with put command.  If the tube
+--   does not already exist, it will be created.  Initially, all
+--   sessions will use the tube named \"default\".
+useTube :: BeanstalkServer -- ^ Beanstalk server
+        -> String -- ^ Name of tube to watch
+        -> IO ()
 useTube bs name = withMVar bs task
     where task s =
               do send s ("use "++name++"\r\n");
                  response <- readLine s
                  checkForBeanstalkErrors response
 
--- | Adds named tube to watch list, returns the number of tubes being watched.
-watchTube :: BeanstalkServer -> String -> IO Int
+-- | Add a named tube to the watch list, those tubes which
+--   'reserveJob' will request jobs from.
+watchTube :: BeanstalkServer -- ^ Beanstalk server
+          -> String -- ^ Name of tube to watch
+          -> IO Int -- ^ Number of tubes currently being watched
 watchTube bs name = withMVar bs task
     where task s =
               do send s ("watch "++name++"\r\n");
@@ -303,10 +318,12 @@ watchTube bs name = withMVar bs task
                  checkForBeanstalkErrors response
                  return $ parseWatching response
 
--- | Removes named tube to watch list, returns the number of tubes still
--- being watched.  If the tube being ignored is the only one currently
--- being watched, a NotIgnoredException is thrown.
-ignoreTube :: BeanstalkServer -> String -> IO Int
+-- | Removes the named tube to watch list.  If the tube being ignored
+--   is the only one currently being watched, a 'NotIgnoredException'
+--   is thrown.
+ignoreTube :: BeanstalkServer -- ^ Beanstalk server
+           -> String -- ^ Name of tube to ignore
+           -> IO Int -- ^ Number of tubes currently being watched
 ignoreTube bs name = withMVar bs task
     where task s =
               do send s ("ignore "++name++"\r\n");
@@ -315,23 +332,28 @@ ignoreTube bs name = withMVar bs task
                  return $ parseWatching response
 
 -- | Inspect a specific job in the system.
-peekJob :: BeanstalkServer -> Int -> IO Job
+peekJob :: BeanstalkServer -- ^ Beanstalk server
+        -> Int -- ^ ID of job to get information about
+        -> IO Job -- ^ Job definition
 peekJob bs jobid = genericPeek bs ("peek "++(show jobid))
 
--- | Inspect the next ready job.
-peekReadyJob :: BeanstalkServer -> IO Job
+-- | Inspect the next ready job on the currently used tube.
+peekReadyJob :: BeanstalkServer -- ^ Beanstalk server
+             -> IO Job -- ^ Job definition
 peekReadyJob bs = genericPeek bs "peek-ready"
 
--- | Inspect the delayed job with shortest delay remaining.
-peekDelayedJob :: BeanstalkServer -> IO Job
+-- | Inspect the delayed job with shortest delay remaining on the currently used tube.
+peekDelayedJob :: BeanstalkServer -- ^ Beanstalk server
+               -> IO Job -- ^ Job definition
 peekDelayedJob bs = genericPeek bs "peek-delayed"
 
--- | Inspect the next buried job.
-peekBuriedJob :: BeanstalkServer -> IO Job
+-- | Inspect the next buried job on the currently used tube.
+peekBuriedJob :: BeanstalkServer -- ^ Beanstalk server
+              -> IO Job -- ^ Job definition
 peekBuriedJob bs = genericPeek bs "peek-buried"
 
 -- Essence of the peek command.  Variations (peek, peek-ready,
--- peek-delayed, peek-buried) just provide the string command, while
+-- peek-delayed, peek-buried) just provide the command string, while
 -- this function actually executes it and parses the results.
 genericPeek :: BeanstalkServer -> String -> IO Job
 genericPeek bs cmd = withMVar bs task
@@ -345,10 +367,11 @@ genericPeek bs cmd = withMVar bs task
                  return (Job jobid content)
 
 -- | Move jobs from current tube into ready queue.  If buried jobs
--- exist, only those will be moved, otherwise delayed jobs will be
--- made ready.  Takes as an argument the max number of jobs to kick,
--- returns how many jobs were actually kicked.
-kickJobs :: BeanstalkServer -> Int -> IO Int
+--   exist, only those will be moved, otherwise delayed jobs will be
+--   made ready.
+kickJobs :: BeanstalkServer -- ^ Beanstalk server
+         -> Int -- ^ Number of jobs to kick
+         -> IO Int -- ^ Number of jobs actually kicked
 kickJobs bs maxcount = withMVar bs task
     where task s =
               do send s ("kick "++(show maxcount)++"\r\n")
@@ -377,39 +400,213 @@ genericStats bs cmd = withMVar bs task
                  yamlN <- parseYaml statContent
                  return $ yamlMapToHMap yamlN
 
--- | Give statistical information about a job.
-statsJob :: BeanstalkServer -> Int -> IO (M.Map String String)
+-- | Return statistical information about a job.  Keys that can be
+--   expected to be returned are the following:
+--
+--   [@id@] ID of the job.
+--
+--   [@tube@] The tube that contains this job
+--
+--   [@state@] State of the job, either \"ready\", \"delayed\", \"reserved\", or \"buried\"
+--
+--   [@pri@] Priority of the job
+--
+--   [@age@] Time in seconds since the 'putJob' command created this job
+--
+--   [@time-left@] Time in seconds until this job is placed in the
+--   ready queue, if it is currently reserved or delayed
+--
+--   [@reserves@] Number of times this job has been reserved
+--
+--   [@timeouts@] Number of times this job has timed out after a reservation
+--
+--   [@releases@] Number of times this job has been released
+--
+--   [@buries@] Number of times this job has been buried
+--
+--   [@kicks@] Number of times this job has been kicked
+--
+--   See the Beanstalk protocol docs for the definitive list and definitions.
+statsJob :: BeanstalkServer -- ^ Beanstalk server
+         -> Int -- ^ ID of job
+         -> IO (M.Map String String) -- ^ Key-value map of job statistics
 statsJob bs jobid = genericStats bs ("stats-job "++(show jobid))
 
--- | Give statistical information about a tube
-statsTube :: BeanstalkServer -> String -> IO (M.Map String String)
+-- | Return statistical information about a tube.  Keys that can be
+--   expected to be returned are the following:
+--   [@name@] Name of the tube
+--
+--   [@current-jobs-urgent@] Number of jobs in this tube with state
+--   'READY', with priority less than 1024
+--
+--   [@current-jobs-ready@] Number of jobs in this tube with state
+--   'READY'
+--
+--   [@current-jobs-reserved@] Number of jobs in this tube with state
+--   'RESERVED'
+--
+--   [@current-jobs-delayed@] Number of jobs in this tube with state
+--   'DELAYED'
+--
+--   [@current-jobs-buried@] Number of jobs in this tube with state
+--   'BURIED'
+--
+--   [@total-jobs@] Number of jobs that have been created in this tube
+--   since it was created
+--
+--   [@current-waiting@] Number of clients that have issued a reserve
+--   command for this tube, and are still blocking waiting on a
+--   response
+--
+--   [@pause@] Number of seconds this tube has been paused
+--
+--   [@cmd-pause-tube@] Number of seconds this tube has been paused
+--
+--   [@pause-time-left@] Seconds remaining until this tube accepts job
+--   reservations
+--
+--   See the Beanstalk protocol docs for the definitive list and definitions.
+statsTube :: BeanstalkServer -- ^ Beanstalk server
+          -> String -- ^ Name of tube
+          -> IO (M.Map String String) -- ^ Key-value map of tube statistics
 statsTube bs tube = genericStats bs ("stats-tube "++tube)
 
 -- | Print stats to screen in a readable format.
-printStats :: M.Map String String -> IO ()
+printStats :: M.Map String String -- ^ Key-value map of statistic names and values
+           -> IO () -- ^ Screen output showing all \"key => value\" pairs
 printStats stats =
     do let kv = M.assocs stats
        mapM_ (\(k,v) -> putStrLn (k ++ " => " ++ v)) kv
 
 -- | Pretty print a list.
-printList :: [String] -> IO ()
+printList :: [String] -- ^ List of names
+          -> IO () -- ^ Screen output showing results with prefixed counter
 printList list =
     do mapM_ (\(n,x) -> putStrLn (" "++(show n)++". "++x)) (zip [1..] (list))
 
--- | Read server statistics as a mapping from names to values.
-statsServer :: BeanstalkServer -> IO (M.Map String String)
+-- | Return statistical information about the server, across all
+--   clients.  Keys that can be expected to be returned are the
+--   following:
+--
+--   [@current-jobs-urgent@] Number of 'READY' jobs with priority less
+--   than 1024
+--
+--   [@current-jobs-ready@] Number of jobs in the ready queue
+--
+--   [@current-jobs-reserved@] Number of jobs reserved
+--
+--   [@current-jobs-delayed@] Number of delayed jobs
+--
+--   [@current-jobs-buried@] Number of buried jobs
+--
+--   [@cmd-put@] Cumulative number of 'putJob' commands issued
+--
+--   [@cmd-peek@] Cumulative number of 'peekJob' commands issued
+--
+--   [@cmd-peek-ready@] Cumulative number of 'peekReadyJob' commands
+--   issued
+--
+--   [@cmd-peek-delayed@] Cumulative number of 'peekDelayedJob'
+--   commands issued
+--
+--   [@cmd-peek-buried@] Cumulative number of 'peekBuriedJob' commands
+--   issued
+--
+--   [@cmd-reserve@] Cumulative number of 'reserveJob' commands issued
+--
+--   [@cmd-use@] Cumulative number of 'useTube' commands issued
+--
+--   [@cmd-watch@] Cumulative number of 'watchTube' commands issued
+--
+--   [@cmd-ignore@] Cumulative number of 'ignoreTube' commands issued
+--
+--   [@cmd-delete@] Cumulative number of 'deleteJob' commands issued
+--
+--   [@cmd-release@] Cumulative number of 'releaseJob' commands issued
+--
+--   [@cmd-bury@] Cumulative number of 'buryJob' commands issued
+--
+--   [@cmd-kick@] Cumulative number of 'kickJobs' commands issued
+--
+--   [@cmd-stats@] Cumulative number of 'statsServer' commands issued
+--
+--   [@cmd-stats-job@] Cumulative number of 'statsJob' commands issued
+--
+--   [@cmd-stats-tube@] Cumulative number of 'statsTube' commands
+--   issued
+--
+--   [@cmd-list-tubes@] Cumulative number of 'listTubes' commands
+--   issued
+--
+--   [@cmd-list-tube-used@] Cumulative number of 'listTubeUsed'
+--   commands issued
+--
+--   [@cmd-list-tubes-watched@] Cumulative number of
+--   'listTubesWatched' commands issued
+--
+--   [@cmd-pause-tube@] Cumulative number of 'pauseTube' commands
+--   issued
+--
+--   [@job-timeouts@] Cumulative number of times a job has timed out
+--
+--   [@total-jobs@] Total count of jobs created
+--
+--   [@max-job-size@] Maximum number of bytes for a job body
+--
+--   [@current-tubes@] Current number of existing tubes
+--
+--   [@current-connections@] Number of currently open connections
+--
+--   [@current-producers@] Number of currently open connections that
+--   have issued at least one 'putJob' command
+--
+--   [@current-workers@] Number of currently open connections that
+--   have issued at least one 'reserveJob' command
+--
+--   [@current-waiting@] Number of currently open connections that are
+--   blocking on a 'reserveJob' or 'reserveJobWithTimeout' command
+--
+--   [@total-connections@] Cumulative count of connections
+--
+--   [@pid@] Process ID of the server
+--
+--   [@version@] Server's version string
+--
+--   [@rusage-utime@] The accumulated user CPU time of the server
+--   process in seconds and microseconds
+--
+--   [@rusage-stime@] The accumulated system CPU time of the server
+--   process in seconds and microseconds
+--
+--   [@uptime@] The number of seconds since the server started
+--
+--   [@binlog-oldest-index@] The index of the oldest binlog file
+--   needed to store the current jobs
+--
+--   [@binlog-current-index@] The index of the current binlog file
+--   being written to.  If the binlog is not active, this is zero
+--
+--   [@binlog-max-size@] The maximum number of bytes for a binlog file
+--   before a new binlog file is opened
+--
+--   See the Beanstalk protocol docs for the definitive list and definitions.
+statsServer :: BeanstalkServer -- ^ Beanstalk server
+            -> IO (M.Map String String) -- ^ Key-value map of server statistics
 statsServer bs = genericStats bs "stats"
 
 -- | List all existing tubes.
-listTubes :: BeanstalkServer -> IO [String]
+listTubes :: BeanstalkServer -- ^ Beanstalk server
+          -> IO [String] -- ^ Names of all tubes on the server
 listTubes bs = genericList bs "list-tubes"
 
 -- | List all watched tubes.
-listTubesWatched :: BeanstalkServer -> IO [String]
+listTubesWatched :: BeanstalkServer -- ^ Beanstalk server
+                 -> IO [String] -- ^ Names of all currently watched tubes
 listTubesWatched bs = genericList bs "list-tubes-watched"
 
 -- | List used tube.
-listTubeUsed :: BeanstalkServer -> IO String
+listTubeUsed :: BeanstalkServer -- ^ Beanstalk server
+             -> IO String -- ^ Name of current used tube
 listTubeUsed bs = withMVar bs task
     where task s =
               do send s ("list-tube-used\r\n")
@@ -447,11 +644,16 @@ genericList bs cmd = withMVar bs task
                  yamlN <- parseYaml content
                  return $ yamlListToHList yamlN
 
--- | Count number of jobs in a tube with a status in a given list.
+-- | Count number of jobs in a tube with a state in a given list.
 --   This is not part of the beanstalk protocol spec, so multiple
---   commands are issued to retrieve the count.
-jobCountWithStatus :: BeanstalkServer -> String -> [JobState] -> IO Int
-jobCountWithStatus bs tube validStatuses =
+--   commands are issued to retrieve the count.  Therefore, the result
+--   may not be consistent (it does not represent one snapshot in
+--   time).
+jobCountWithState :: BeanstalkServer -- ^ Beanstalk server
+                   -> String -- ^ Name of tube to inspect
+                   -> [JobState] -- ^ List of valid states for count
+                   -> IO Int -- ^ Number of jobs with a state in the valid list
+jobCountWithState bs tube validStatuses =
     do ts <- statsTube bs tube
        let readyCount = case (elem READY validStatuses) of
                           True -> read (fromJust (M.lookup "current-jobs-ready" ts))
