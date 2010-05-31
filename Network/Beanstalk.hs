@@ -13,7 +13,7 @@ module Network.Beanstalk (
   connectBeanstalk, disconnectBeanstalk,
   -- * Beanstalk Job Commands
   putJob, releaseJob, reserveJob, reserveJobWithTimeout, deleteJob, buryJob,
-  peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kickJobs,
+  peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kickJobs, touchJob,
   -- * Beanstalk Tube Commands
   useTube, watchTube, ignoreTube, listTubes, listTubesWatched, listTubeUsed,
   -- * Beanstalk Stats Commands
@@ -365,6 +365,17 @@ genericPeek bs cmd = withMVar bs task
                  (content,bytesRead) <- recvLen s (bytes)
                  recv s 2 -- Ending CRLF
                  return (Job jobid content)
+
+-- | Update the Time-To-Run (TTR) value for a job, giving a worker more time before job expiry.
+touchJob :: BeanstalkServer -- ^ Beanstalk server
+         -> Int -- ^ ID of job
+         -> IO ()
+touchJob bs jobid = withMVar bs task
+    where task s =
+              do send s ("touch "++(show jobid)++"\r\n")
+                 response <- readLine s
+                 checkForBeanstalkErrors response
+                 return ()
 
 -- | Move jobs from current tube into ready queue.  If buried jobs
 --   exist, only those will be moved, otherwise delayed jobs will be

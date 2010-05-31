@@ -24,6 +24,7 @@ import Data.Maybe(fromJust)
 import qualified Data.Map as M
 import qualified Control.Exception as E
 import Control.Monad
+import Control.Concurrent(threadDelay)
 
 bs_host = "localhost"
 bs_port = "11300"
@@ -56,6 +57,7 @@ tests =
      TestLabel "ListTubes" listTubesTest,
      TestLabel "ListTubesWatched" listTubesWatchedTest,
      TestLabel "ListTubeUsed" listTubeUsedTest,
+     TestLabel "Touch" touchJobTest,
      TestLabel "isNotfoundException" isNotFoundExceptionTest,
      TestLabel "isBadFormatException" isBadFormatxceptionTest,
      TestLabel "isTimedOutException" isTimedOutExceptionTest,
@@ -332,6 +334,21 @@ listTubeUsedTest =
               do (bs, tt) <- connectAndSelectRandomTube
                  tu <- listTubeUsed bs
                  assertEqual "Used tube" tt tu
+             )
+
+-- Test touching a job to extend its TTR.
+touchJobTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 (_,jobid) <- putJob bs 1 0 600 "test"
+                 rsv_job <- reserveJob bs
+                 threadDelay (2*1000*1000) -- sleep 2 seconds
+                 jobstat_before <- statsJob bs jobid
+                 touchJob bs jobid
+                 jobstat_after <- statsJob bs jobid
+                 let ttr_before = ((read (fromJust (M.lookup "time-left" jobstat_before)))::Int)
+                 let ttr_after = ((read (fromJust (M.lookup "time-left" jobstat_after)))::Int)
+                 assertBool "TTR extended by touch" (ttr_after >= ttr_before)
              )
 
 -- Test that NotFoundException is thrown
