@@ -34,7 +34,7 @@ main = runTestTT tests
 tests =
     TestList
     [
-     TestLabel "Beanstalk Connect" beanstalkConnectTest,
+     TestLabel "Connect" connectTest,
      TestLabel "Use" useTest,
      TestLabel "Watch" watchTest,
      TestLabel "Put" putTest,
@@ -59,12 +59,13 @@ tests =
      TestLabel "isNotfoundException" isNotFoundExceptionTest,
      TestLabel "isBadFormatException" isBadFormatxceptionTest,
      TestLabel "isTimedOutException" isTimedOutExceptionTest,
-     TestLabel "AllExceptions" allExceptionTest
+     TestLabel "AllExceptions" allExceptionTest,
+     TestLabel "Disconnect" disconnectTest
     ]
 
 -- | Ensure that connection to a server works, or at least that no
 --   exceptions are thrown.
-beanstalkConnectTest =
+connectTest =
     TestCase (
               do bs <- connectBeanstalk bs_host bs_port
                  mbSock <- tryTakeMVar bs
@@ -181,7 +182,7 @@ kickDelayTest =
                  randString <- randomName
                  let body = "My test job body, " ++ randString
                  (_,put_job_id) <- putJob bs 1 5 60 body
-                 kicked <- kick bs 1
+                 kicked <- kickJobs bs 1
                  assertEqual "Kick should indicate one job kicked" 1 kicked
              )
 
@@ -402,6 +403,17 @@ allExceptionTest =
                 Right _ -> return ()
                 Left _ -> assertFailure "Erroneous not ignored exception"
           )
+
+disconnectTest =
+    TestCase (
+              do (bs, tt) <- connectAndSelectRandomTube
+                 disconnectBeanstalk bs
+                 mbSock <- tryTakeMVar bs
+                 case mbSock of
+                   Nothing -> do assertFailure "Beanstalk socket was not in the MVar as expected."
+                   Just s ->
+                             do (sIsConnected s >>= return .not) @? "Beanstalk socket was connected"
+         )
 
 -- Assert a number of jobs on a given tube with one of the states
 -- listed.
