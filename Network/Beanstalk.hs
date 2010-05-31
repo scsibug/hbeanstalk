@@ -11,11 +11,15 @@
 module Network.Beanstalk (
   -- * Connecting and Disconnecting
   connectBeanstalk, disconnectBeanstalk,
-  -- * Beanstalk Commands
+  -- * Beanstalk Job Commands
   putJob, releaseJob, reserveJob, reserveJobWithTimeout, deleteJob, buryJob,
-  useTube, watchTube, ignoreTube, peekJob, peekReadyJob, peekDelayedJob,
-  peekBuriedJob, kickJobs, statsJob, statsTube, statsServer, printStats,
-  listTubes, listTubesWatched, listTubeUsed, printList, jobCountWithStatus,
+  peekJob, peekReadyJob, peekDelayedJob, peekBuriedJob, kickJobs,
+  -- * Beanstalk Tube Commands
+  useTube, watchTube, ignoreTube, listTubes, listTubesWatched, listTubeUsed,
+  -- * Beanstalk Stats Commands
+  statsJob, statsTube, statsServer, jobCountWithStatus,
+  -- * Pretty-Printing Stats and Lists
+  printStats, printList,
   -- * Exception Predicates
   isNotFoundException, isBadFormatException, isTimedOutException,
   isOutOfMemoryException, isInternalErrorException, isJobTooBigException,
@@ -195,9 +199,11 @@ putJob bs priority delay ttr job_body = withMVar bs task
                  let (state, jobid) = parsePut response
                  return (state, jobid)
 
--- | Reserve a new job from the watched tube list, blocking until one becomes
--- available.
-reserveJob :: BeanstalkServer -> IO Job
+-- | Reserve a new job from the watched tube list, blocking until one
+--   becomes available. 'DeadlineSoonException' may be thrown if a job
+--   reserved by the same client is about to expire.
+reserveJob :: BeanstalkServer -- ^ Beanstalk server
+           -> IO Job -- ^ Job reserved by this client
 reserveJob bs = withMVar bs task
     where task s =
               do send s "reserve\r\n"
@@ -212,7 +218,12 @@ reserveJob bs = withMVar bs task
 -- of seconds or until a job is returned.  If no jobs are found before the
 -- timeout value, a TimedOutException will be thrown.  If another reserved job
 -- is about to exceed its time-to-run, a DeadlineSoonException will be thrown.
-reserveJobWithTimeout :: BeanstalkServer -> Int -> IO Job
+reserveJobWithTimeout :: BeanstalkServer -- ^ Beanstalk server
+                      -> Int -- ^ Time in seconds to wait for a job
+                            --   to become available.  Once this time
+                            --   passes, a 'TimedOutException' will be
+                            --   thrown.
+                      -> IO Job -- ^ Job reserved by this client
 reserveJobWithTimeout bs seconds = withMVar bs task
     where task s =
               do send s ("reserve-with-timeout "++(show seconds)++"\r\n")
@@ -223,8 +234,12 @@ reserveJobWithTimeout bs seconds = withMVar bs task
                  recv s 2 -- Ending CRLF
                  return (Job (read jobid) jobContent)
 
--- | Delete a job to indicate that it has been completed.
-deleteJob :: BeanstalkServer -> Int -> IO ()
+-- | Delete a job to indicate that it has been completed.  If the job
+--   does not exist, was not reserved by this client, or is not in the
+--   'READY' or 'BURIED' state, a 'NotFoundException' will be thrown.
+deleteJob :: BeanstalkServer -- ^ Beanstalk server
+          -> Int -- ^ ID of the job to delete
+          -> IO ()
 deleteJob bs jobid = withMVar bs task
     where task s =
               do send s ("delete "++(show jobid)++"\r\n")
@@ -432,7 +447,9 @@ genericList bs cmd = withMVar bs task
                  yamlN <- parseYaml content
                  return $ yamlListToHList yamlN
 
--- | Count number of jobs in a tube with a status in a given list
+-- | Count number of jobs in a tube with a status in a given list.
+--   This is not part of the beanstalk protocol spec, so multiple
+--   commands are issued to retrieve the count.
 jobCountWithStatus :: BeanstalkServer -> String -> [JobState] -> IO Int
 jobCountWithStatus bs tube validStatuses =
     do ts <- statsTube bs tube
