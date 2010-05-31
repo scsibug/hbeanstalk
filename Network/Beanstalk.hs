@@ -37,6 +37,12 @@ import qualified Control.Exception as E
 import Data.Maybe
 import Control.Monad
 import Control.Concurrent.MVar
+
+-- | Beanstalk Server, wrapped in an 'MVar' for synchronizing access
+--   to the server socket.  As many of these can be created as are
+--   needed, but jobs are associated to a single server session and
+--   must be released/deleted with the same session that reserved
+--   them.
 type BeanstalkServer = MVar Socket
 
 -- | Information essential to performing a job and operating on it.
@@ -58,42 +64,35 @@ data JobState = -- | Ready, retrievable with 'reserveJob'
                 BURIED
               deriving (Show, Read, Eq)
 
--- | Exceptions generated from the beanstalkd server (descriptions from
---   beanstalkd protocol documentation).
+-- | Exceptions generated from the beanstalkd server
 data BeanstalkException =
     -- | Job does not exist, or is not reserved by this client.
     NotFoundException |
-    -- | The server cannot allocate enough memory for the job.
-    --   The client should try again later.
+    -- | The server did not have enough memory available to create the job.
     OutOfMemoryException |
-    -- | This indicates a bug in the server. It should never
-    --   happen. If it does happen, please report it at
+    -- | The server detected an internal error.  If this happens, please report to
     --   <http://groups.google.com/group/beanstalk-talk>.
     InternalErrorException |
-    -- | This means that the server has been put into drain mode
-    --   and is no longer accepting new jobs. The client should try
-    --   another server or disconnect and try again later.
+    -- | The server is in drain mode, and is not accepting new jobs.
     DrainingException |
-    -- | The client sent a command line that was not well-formed.
-    --   This can happen if the line does not end with '\r\n', if non-numeric
-    --   characters occur where an integer is expected, if the wrong number of
-    --   arguments are present, or if the command line is mal-formed in any other
-    --   way.
+    -- | Client sent a command that was not understood.  May indicate
+    --   a bad argument list or other format violation.
     BadFormatException |
-    -- | The client sent a command that the server does not know.
+    -- | The server did not recognize a command.  Should never occur,
+    --   this is either a bug in the hbeanstalk library or an
+    --   incompatible server version.
     UnknownCommandException |
-    -- | The client has requested to put a job with a body larger than
-    --   max-job-size bytes.
+    -- | A 'putJob' call included a body larger than the server's
+    --   @max-job-size@ setting allows.
     JobTooBigException |
-    -- | The job body must be followed by a CR-LF pair, that is,
-    --   '\r\n'. These two bytes are not counted in the job size given by the
-    --   client in the put command line.
+    -- | This library failed to terminate a job body with a CR-LF
+    --   terminator.  Should never occur, if it does it is a bug in
+    --   hbeanstalk.
     ExpectedCRLFException |
-    -- | Not strictly an error condition, this gives the client a chance to
-    --   delete or release its reserved job before the server automatically
-    --   releases it.  See
+    -- | Not strictly an error condition, this indicates a job this
+    --   client has reserved is about to expire.  See
     --   <http://groups.google.com/group/beanstalk-talk/browse_thread/thread/232d0cac5bebe30f>
-    --   for an explanation.
+    --   for a detailed explanation.
     DeadlineSoonException |
     -- | Timeout for @reserveJobWithTimeout@ expired before a job became available.
     TimedOutException |
@@ -101,7 +100,9 @@ data BeanstalkException =
     --   must always watch one or more tubes).
     NotIgnoredException
     deriving (Show, Typeable, Eq)
+
 instance E.Exception BeanstalkException
+
 -- | Predicate to detect 'NotFoundException'
 isNotFoundException :: BeanstalkException -> Bool
 isNotFoundException = (==) NotFoundException
@@ -139,9 +140,9 @@ isNotIgnoredException :: BeanstalkException -> Bool
 isNotIgnoredException = (==) NotIgnoredException
 
 -- | Connect to a beanstalkd server.
-connectBeanstalk :: HostName
-                 -> String
-                 -> IO BeanstalkServer
+connectBeanstalk :: HostName -- ^ Hostname of beanstalkd server
+                 -> String -- ^ Port number of server
+                 -> IO BeanstalkServer -- ^ Server object for commands to operate on
 connectBeanstalk hostname port =
     do addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
        let serveraddr = head addrinfos
@@ -155,15 +156,31 @@ connectBeanstalk hostname port =
        bs <- newMVar sock
        return bs
 
--- | Disconnect from a beanstalkd server.
-disconnectBeanstalk :: BeanstalkServer -> IO ()
+-- | Disconnect from a beanstalkd server.  Any jobs reserved from this connection will be released
+disconnectBeanstalk :: BeanstalkServer -- ^ Beanstalk server
+                    -> IO ()
 disconnectBeanstalk bs = withMVar bs task
     where task s = sClose s
 
 -- | Put a new job on the current tube that was selected with useTube.
 -- Specify numeric priority, delay before becoming active, a limit
 -- on the time-to-run, and a job body.  Returns job state and ID.
-putJob :: BeanstalkServer -> Int -> Int -> Int -> String -> IO (JobState, Int)
+putJob :: BeanstalkServer -- ^ Beanstalk server
+       -> Int -- ^ Job priority: an integer less than 2**32. Jobs with smaller
+             --   priorities are scheduled before jobs with
+             --   larger priorities.  The most urgent priority is 0; the
+             --   least urgent priority is 4294967295.
+       -> Int -- ^ Number of seconds to delay putting the job into the
+             --   ready queue.  Until that time expires, the job will
+             --   have a state of 'DELAYED'.
+       -> Int -- ^ Maximum time-to-run in seconds for a reserved job.
+             --   This timer starts when a job is reserved.  If it
+             --   expires without a 'deleteJob', 'releaseJob',
+             --   'buryJob', or 'touchJob' command being run, the job
+             --   will be placed back on the ready queue.  The minimum
+             --   value is 1.
+       -> String -- ^ Job body.
+       -> IO (JobState, Int)
 putJob bs priority delay ttr job_body = withMVar bs task
     where task s =
               do let job_size = length job_body
