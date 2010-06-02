@@ -5,9 +5,9 @@
 -- Copyright   :  (c) Greg Heartsfield 2010
 -- License     :  BSD3
 --
--- Consume jobs from the default tube as quickly as possible
+-- Consume jobs from the default tube as quickly as possible.
 -- Usage:
---    hb_producer.hs host port
+--    hb_consumer.hs host port
 -----------------------------------------------------------------------------
 
 import Network.Beanstalk
