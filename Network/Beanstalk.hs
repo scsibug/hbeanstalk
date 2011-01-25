@@ -681,9 +681,7 @@ genericList bs cmd = withMVar bs task
                  lHeader <- readLine s
                  checkForBeanstalkErrors lHeader
                  let bytes = parseOkLen lHeader
-                 content <- recv s bytes
-                 recv s 2 -- Ending CRLF
-                 return $ parseYamlList content
+                 readYamlList s
 
 -- | Count number of jobs in a tube with a state in a given list.
 --   This is not part of the beanstalk protocol spec, so multiple
@@ -768,14 +766,13 @@ parseFoundIdLen input =
 
 foundIdLenParser = P.string "FOUND " *> ((,) <$> P8.decimal <* P8.space <*> P8.decimal)
 
--- Parse a YAML list
-parseYamlList :: B.ByteString -> [B.ByteString]
-parseYamlList input =
-    case feed (parse yamlListParser input) "" of
-      Done _ x -> x
-      _        -> []
+-- Read a YAML list, and parse it.
+readYamlList s = do result <- parseWith (recv s 1024) yamlListParser ""
+                    case result of
+                      Done _ x -> return x
+                      _        -> return []
 
-yamlListParser = start_line *> many list_item
+yamlListParser = start_line *> many list_item <* P.string "\r\n"
     where start_line = P.string "---" *> P8.endOfLine
           list_item = P.string "- " *> takeTill P8.isEndOfLine <* P8.endOfLine
 
