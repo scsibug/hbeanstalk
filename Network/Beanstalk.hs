@@ -32,7 +32,6 @@ module Network.Beanstalk (
 import Data.Bits
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import Network.Socket.ByteString
-import Network.BSD
 import Data.List
 import System.IO
 import Data.Typeable
