@@ -302,13 +302,7 @@ checkForBeanstalkErrors input =
        eop DeadlineSoonException "DEADLINE_SOON\r\n"
        eop TimedOutException "TIMED_OUT\r\n"
        eop NotIgnoredException "NOT_IGNORED\r\n"
-       where eop e s = exceptionOnParse e (parse (P.string s) input)
-
--- | When an error is successfully parsed, throw the given exception.
-exceptionOnParse :: BeanstalkException -> Result a -> IO ()
-exceptionOnParse e x = case x of
-                    Fail _ _ _ -> return ()
-                    _          -> E.throwIO e
+       where eop e s = if B.take (B.length s) input == s then E.throwIO e else return ()
 
 -- | Assign a tube for new jobs created with put command.  If the tube
 --   does not already exist, it will be created.  Initially, all
