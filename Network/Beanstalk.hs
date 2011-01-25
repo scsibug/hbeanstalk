@@ -225,8 +225,8 @@ reserveJob bs = withMVar bs task
 
 -- | Reserve a job from the watched tube list, blocking for the specified number
 -- of seconds or until a job is returned.  If no jobs are found before the
--- timeout value, a TimedOutException will be thrown.  If another reserved job
--- is about to exceed its time-to-run, a DeadlineSoonException will be thrown.
+-- timeout value, a 'TimedOutException' will be thrown.  If another reserved job
+-- is about to exceed its time-to-run, a 'DeadlineSoonException' will be thrown.
 reserveJobWithTimeout :: BeanstalkServer -- ^ Beanstalk server
                       -> Int -- ^ Time in seconds to wait for a job
                             --   to become available.  Once this time
