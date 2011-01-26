@@ -653,7 +653,7 @@ listTubeUsed :: BeanstalkServer -- ^ Beanstalk server
              -> IO B.ByteString -- ^ Name of current used tube
 listTubeUsed bs = withMVar bs task
     where task s =
-              do send s ("list-tube-used\r\n")
+              do sendAll s ("list-tube-used\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let tubeName = parseUsedTube response
