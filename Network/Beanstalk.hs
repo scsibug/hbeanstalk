@@ -425,9 +425,7 @@ genericStats bs cmd = withMVar bs task
                  statHeader <- readLine s
                  checkForBeanstalkErrors statHeader
                  let bytes = parseOkLen statHeader
-                 statContent <- recv s bytes
-                 recv s 2 -- Ending CRLF
-                 return $ parseYamlDict statContent
+                 readYamlDict s
 
 -- | Return statistical information about a job.  Keys that can be
 --   expected to be returned are the following:
@@ -776,17 +774,17 @@ yamlListParser = start_line *> many list_item <* P.string "\r\n"
     where start_line = P.string "---" *> P8.endOfLine
           list_item = P.string "- " *> takeTill P8.isEndOfLine <* P8.endOfLine
 
--- Parse a YAML dict, and return a Map
-parseYamlDict :: B.ByteString -> (M.Map B.ByteString B.ByteString)
-parseYamlDict input =
-    case feed (parse yamlDictParser input) "" of
-      Done _ x -> x
-      _        -> M.empty
+-- Read a YAML dict, parse it, and return a Map
+readYamlDict s = do result <- parseWith (recv s 1024) yamlDictParser ""
+                    case result of
+                      Done _ x -> return x
+                      _        -> return M.empty
 
-yamlDictParser = start_line *> (M.fromList <$> many dict_item)
+yamlDictParser = start_line *> (M.fromList <$> many dict_item) <* P.string "\r\n"
     where start_line = P.string "---" *> P8.endOfLine
           dict_item = (,) <$> dict_key <*> dict_value
-          dict_key = takeTill (==58) <* P.string ": "
+          dict_key = takeTill colon_or_newline <* P.string ": "
+          colon_or_newline byte = byte == 58 || P8.isEndOfLine byte
           dict_value = takeTill P8.isEndOfLine <* P8.endOfLine
 
 -- Parse an integer ByteString
