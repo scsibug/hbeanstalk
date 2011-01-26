@@ -219,8 +219,8 @@ reserveJob bs = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
-                 jobContent <- recv s bytes
-                 recv s 2 -- Ending CRLF
+                 jobContent <- recvBytes s bytes
+                 recvBytes s 2 -- Ending CRLF
                  return (Job jobid jobContent)
 
 -- | Reserve a job from the watched tube list, blocking for the specified number
@@ -241,8 +241,8 @@ reserveJobWithTimeout bs seconds = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
-                 jobContent <- recv s bytes
-                 recv s 2 -- Ending CRLF
+                 jobContent <- recvBytes s bytes
+                 recvBytes s 2 -- Ending CRLF
                  return (Job jobid jobContent)
 
 -- | Delete a job to indicate that it has been completed.  If the job
@@ -377,8 +377,8 @@ genericPeek bs cmd = withMVar bs task
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseFoundIdLen response
-                 content <- recv s bytes
-                 recv s 2 -- Ending CRLF
+                 content <- recvBytes s bytes
+                 recvBytes s 2 -- Ending CRLF
                  return (Job jobid content)
 
 -- | Update the Time-To-Run (TTR) value for a job, giving a worker more time before job expiry.
@@ -713,7 +713,7 @@ readLine s =
     catch readLine' (\err -> return (B.pack $ "Error: " ++ show err))
         where
           readLine' = readline'' (fromByteString B.empty) >>= return . toByteString
-              where readline'' b = do c <- recv s 1
+              where readline'' b = do c <- recvBytes s 1
                                       if B.head c == '\n'
                                         then return     (b `mappend` fromByteString c)
                                         else readline'' (b `mappend` fromByteString c)
@@ -793,3 +793,17 @@ parseIntBS input =
     case feed (parse P8.decimal input) "" of
       Done _ x -> x
       _        -> error "Beanstalk.parseIntBS: no parse"
+
+-- Read bytes from a socket, and return the bytestring. Blocks until the given
+-- number of bytes has been read.
+recvBytes :: Socket -> Int -> IO B.ByteString
+recvBytes s bytes = recv' (fromByteString "") bytes
+    where recv' b 0 = return $ toByteString b
+          recv' b n = do 
+            chunk <- recv s (min n 1024)
+            let n' = n - B.length chunk
+            if n' == n
+              then ioError $ userError $ "Could not read " ++ (show bytes) ++ 
+                       " bytes from beanstalkd; server disconnect."
+              else
+                  recv' (b `mappend` fromByteString chunk) n'
