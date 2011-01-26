@@ -12,6 +12,7 @@
 
 import Network.Beanstalk
 import System.Environment
+import qualified Data.ByteString.Char8 as B
 
 main = do argv <- getArgs
           let host : port : xs = argv
@@ -21,6 +22,6 @@ main = do argv <- getArgs
 consumeJobs bs =
     do job <- reserveJob bs
        putStrLn ("reserved job #"++(show (job_id job)))
-       putStrLn ("   Job body: "++(job_body job))
+       putStr "   Job body: " >> B.putStrLn (job_body job)
        deleteJob bs (job_id job)
        consumeJobs bs

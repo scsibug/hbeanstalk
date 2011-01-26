@@ -14,6 +14,7 @@ import Network.Beanstalk
 import System.Environment
 import Control.Concurrent
 import System.Random (randomIO)
+import qualified Data.ByteString.Char8 as B
 
 main = do argv <- getArgs
           let host : port : delay : xs = argv
@@ -29,4 +30,4 @@ produceJobs bs d =
 
 randomBody =
     do rdata <- randomIO :: IO Integer
-       return ("job data="++(show (abs rdata)))
+       return (B.pack $ "job data="++(show (abs rdata)))
