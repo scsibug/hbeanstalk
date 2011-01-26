@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Network.Beanstalk
@@ -30,18 +30,24 @@ module Network.Beanstalk (
   ) where
 
 import Data.Bits
-import Network.Socket
-import Network.BSD
+import Network.Socket hiding (send, sendTo, recv, recvFrom)
+import Network.Socket.ByteString
 import Data.List
 import System.IO
-import Text.ParserCombinators.Parsec
-import Data.Yaml.Syck
 import Data.Typeable
 import qualified Data.Map as M
 import qualified Control.Exception as E
 import Data.Maybe
 import Control.Monad
 import Control.Concurrent.MVar
+import Control.Applicative hiding (many)
+import Data.Attoparsec as P
+import qualified Data.Attoparsec.Char8 as P8
+import qualified Data.ByteString.Char8 as B
+import Blaze.ByteString.Builder
+import Blaze.ByteString.Builder.Char8
+import Blaze.ByteString.Builder.ByteString
+import Data.Monoid (mappend)
 
 -- | Beanstalk Server, wrapped in an 'MVar' for synchronizing access
 --   to the server socket.  As many of these can be created as are
@@ -55,7 +61,7 @@ data Job =
     Job { -- | Job numeric identifier
           job_id :: Int,
           -- | Job body
-          job_body :: String}
+          job_body :: B.ByteString}
            deriving (Show, Read, Eq)
 
 -- | States describing the lifecycle of a job.
@@ -184,17 +190,19 @@ putJob :: BeanstalkServer -- ^ Beanstalk server
              --   'buryJob', or 'touchJob' command being run, the job
              --   will be placed back on the ready queue.  The minimum
              --   value is 1.
-       -> String -- ^ Job body.
+       -> B.ByteString -- ^ Job body.
        -> IO (JobState, Int) -- ^ State of the newly created job and its ID
 putJob bs priority delay ttr job_body = withMVar bs task
     where task s =
-              do let job_size = length job_body
-                 send s ("put " ++
-                         (show priority) ++ " " ++
-                         (show delay) ++ " " ++
-                         (show ttr) ++ " " ++
-                         (show job_size) ++ "\r\n")
-                 send s (job_body ++ "\r\n")
+              do let job_size = B.length job_body
+                 sendAll s $ toByteString (fromByteString "put " `mappend`
+                                           fromShow priority `mappend` fromChar ' ' `mappend`
+                                           fromShow delay `mappend` fromChar ' ' `mappend`
+                                           fromShow ttr `mappend` fromChar ' ' `mappend`
+                                           fromShow job_size `mappend`
+                                           fromByteString "\r\n" `mappend`
+                                           fromByteString job_body `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (state, jobid) = parsePut response
@@ -207,13 +215,13 @@ reserveJob :: BeanstalkServer -- ^ Beanstalk server
            -> IO Job -- ^ Job reserved by this client
 reserveJob bs = withMVar bs task
     where task s =
-              do send s "reserve\r\n"
+              do sendAll s "reserve\r\n"
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
-                 (jobContent, bytesRead) <- recvLen s (bytes)
+                 jobContent <- recv s bytes
                  recv s 2 -- Ending CRLF
-                 return (Job (read jobid) jobContent)
+                 return (Job jobid jobContent)
 
 -- | Reserve a job from the watched tube list, blocking for the specified number
 -- of seconds or until a job is returned.  If no jobs are found before the
@@ -227,13 +235,15 @@ reserveJobWithTimeout :: BeanstalkServer -- ^ Beanstalk server
                       -> IO Job -- ^ Job reserved by this client
 reserveJobWithTimeout bs seconds = withMVar bs task
     where task s =
-              do send s ("reserve-with-timeout "++(show seconds)++"\r\n")
+              do sendAll s $ toByteString (fromByteString "reserve-with-timeout " `mappend`
+                                           fromShow seconds `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
-                 (jobContent, bytesRead) <- recvLen s (bytes)
+                 jobContent <- recv s bytes
                  recv s 2 -- Ending CRLF
-                 return (Job (read jobid) jobContent)
+                 return (Job jobid jobContent)
 
 -- | Delete a job to indicate that it has been completed.  If the job
 --   does not exist, was not reserved by this client, or is not in the
@@ -243,7 +253,9 @@ deleteJob :: BeanstalkServer -- ^ Beanstalk server
           -> IO ()
 deleteJob bs jobid = withMVar bs task
     where task s =
-              do send s ("delete "++(show jobid)++"\r\n")
+              do sendAll s $ toByteString (fromByteString "delete " `mappend`
+                                           fromShow jobid `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
 
@@ -255,10 +267,10 @@ releaseJob :: BeanstalkServer -- ^ Beanstalk server
            -> IO ()
 releaseJob bs jobid priority delay = withMVar bs task
     where task s =
-              do send s ("release " ++
-                         (show jobid) ++ " " ++
-                         (show priority) ++ " " ++
-                         (show delay) ++ "\r\n")
+              do sendAll s $ toByteString (fromByteString "release " `mappend`
+                                           fromShow jobid `mappend` fromChar ' ' `mappend`
+                                           fromShow priority `mappend` fromChar ' ' `mappend`
+                                           fromShow delay `mappend` fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
 
@@ -269,11 +281,13 @@ buryJob :: BeanstalkServer -- ^ Beanstalk server
         -> IO ()
 buryJob bs jobid pri = withMVar bs task
     where task s =
-              do send s ("bury "++(show jobid)++" "++(show pri)++"\r\n")
+              do sendAll s $ toByteString (fromByteString "bury " `mappend`
+                                           fromShow jobid `mappend` fromChar ' ' `mappend`
+                                           fromShow pri `mappend` fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
 
-checkForBeanstalkErrors :: String -- ^ beanstalkd server response
+checkForBeanstalkErrors :: B.ByteString -- ^ beanstalkd server response
                         -> IO ()
 checkForBeanstalkErrors input =
     do eop OutOfMemoryException "OUT_OF_MEMORY\r\n"
@@ -287,34 +301,32 @@ checkForBeanstalkErrors input =
        eop DeadlineSoonException "DEADLINE_SOON\r\n"
        eop TimedOutException "TIMED_OUT\r\n"
        eop NotIgnoredException "NOT_IGNORED\r\n"
-       where eop e s = exceptionOnParse e (parse (string s) "errorParser" input)
-
--- | When an error is successfully parsed, throw the given exception.
-exceptionOnParse :: BeanstalkException -> Either a b -> IO ()
-exceptionOnParse e x = case x of
-                    Right _ -> E.throwIO e
-                    Left _ -> return ()
+       where eop e s = if B.take (B.length s) input == s then E.throwIO e else return ()
 
 -- | Assign a tube for new jobs created with put command.  If the tube
 --   does not already exist, it will be created.  Initially, all
 --   sessions will use the tube named \"default\".
 useTube :: BeanstalkServer -- ^ Beanstalk server
-        -> String -- ^ Name of tube to watch
+        -> B.ByteString -- ^ Name of tube to watch
         -> IO ()
 useTube bs name = withMVar bs task
     where task s =
-              do send s ("use "++name++"\r\n");
+              do sendAll s $ toByteString (fromByteString "use " `mappend`
+                                           fromByteString name `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
 
 -- | Add a named tube to the watch list, those tubes which
 --   'reserveJob' will request jobs from.
 watchTube :: BeanstalkServer -- ^ Beanstalk server
-          -> String -- ^ Name of tube to watch
+          -> B.ByteString -- ^ Name of tube to watch
           -> IO Int -- ^ Number of tubes currently being watched
 watchTube bs name = withMVar bs task
     where task s =
-              do send s ("watch "++name++"\r\n");
+              do sendAll s $ toByteString (fromByteString "watch " `mappend`
+                                           fromByteString name `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  return $ parseWatching response
@@ -323,11 +335,13 @@ watchTube bs name = withMVar bs task
 --   is the only one currently being watched, a 'NotIgnoredException'
 --   is thrown.
 ignoreTube :: BeanstalkServer -- ^ Beanstalk server
-           -> String -- ^ Name of tube to ignore
+           -> B.ByteString -- ^ Name of tube to ignore
            -> IO Int -- ^ Number of tubes currently being watched
 ignoreTube bs name = withMVar bs task
     where task s =
-              do send s ("ignore "++name++"\r\n");
+              do sendAll s $ toByteString (fromByteString "ignore " `mappend`
+                                           fromByteString name `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  return $ parseWatching response
@@ -336,34 +350,34 @@ ignoreTube bs name = withMVar bs task
 peekJob :: BeanstalkServer -- ^ Beanstalk server
         -> Int -- ^ ID of job to get information about
         -> IO Job -- ^ Job definition
-peekJob bs jobid = genericPeek bs ("peek "++(show jobid))
+peekJob bs jobid = genericPeek bs (fromByteString "peek " `mappend` fromShow jobid)
 
 -- | Inspect the next ready job on the currently used tube.
 peekReadyJob :: BeanstalkServer -- ^ Beanstalk server
              -> IO Job -- ^ Job definition
-peekReadyJob bs = genericPeek bs "peek-ready"
+peekReadyJob bs = genericPeek bs (fromByteString "peek-ready")
 
 -- | Inspect the delayed job with shortest delay remaining on the currently used tube.
 peekDelayedJob :: BeanstalkServer -- ^ Beanstalk server
                -> IO Job -- ^ Job definition
-peekDelayedJob bs = genericPeek bs "peek-delayed"
+peekDelayedJob bs = genericPeek bs (fromByteString "peek-delayed")
 
 -- | Inspect the next buried job on the currently used tube.
 peekBuriedJob :: BeanstalkServer -- ^ Beanstalk server
               -> IO Job -- ^ Job definition
-peekBuriedJob bs = genericPeek bs "peek-buried"
+peekBuriedJob bs = genericPeek bs (fromByteString "peek-buried")
 
 -- Essence of the peek command.  Variations (peek, peek-ready,
 -- peek-delayed, peek-buried) just provide the command string, while
 -- this function actually executes it and parses the results.
-genericPeek :: BeanstalkServer -> String -> IO Job
+genericPeek :: BeanstalkServer -> Builder -> IO Job
 genericPeek bs cmd = withMVar bs task
     where task s =
-              do send s (cmd++"\r\n")
+              do sendAll s $ toByteString (cmd `mappend` fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseFoundIdLen response
-                 (content,bytesRead) <- recvLen s (bytes)
+                 content <- recv s bytes
                  recv s 2 -- Ending CRLF
                  return (Job jobid content)
 
@@ -373,7 +387,9 @@ touchJob :: BeanstalkServer -- ^ Beanstalk server
          -> IO ()
 touchJob bs jobid = withMVar bs task
     where task s =
-              do send s ("touch "++(show jobid)++"\r\n")
+              do sendAll s $ toByteString (fromByteString "touch " `mappend`
+                                           fromShow jobid `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  return ()
@@ -386,31 +402,30 @@ kickJobs :: BeanstalkServer -- ^ Beanstalk server
          -> IO Int -- ^ Number of jobs actually kicked
 kickJobs bs maxcount = withMVar bs task
     where task s =
-              do send s ("kick "++(show maxcount)++"\r\n")
+              do sendAll s $ toByteString (fromByteString "kick " `mappend`
+                                           fromShow maxcount `mappend`
+                                           fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  return (parseKicked response)
 
-parseKicked :: String -> Int
+parseKicked :: B.ByteString -> Int
 parseKicked input = case kparse of
-                      Right a -> read a
-                      Left _ -> 0 -- Error
-    where kparse = parse (string "KICKED " >> many1 digit) "KickedParser" input
+                      Done _ x -> x
+                      _        -> 0 -- Error
+    where kparse = parse (P.string "KICKED " *> P8.decimal) input
 
 -- Essence of the various stats commands.  Variations provide the
 -- command, while this function actually executes it and parses the
 -- results.
-genericStats :: BeanstalkServer -> String -> IO (M.Map String String)
+genericStats :: BeanstalkServer -> Builder -> IO (M.Map B.ByteString B.ByteString)
 genericStats bs cmd = withMVar bs task
     where task s =
-              do send s (cmd++"\r\n")
+              do sendAll s $ toByteString (cmd `mappend` fromByteString "\r\n")
                  statHeader <- readLine s
                  checkForBeanstalkErrors statHeader
                  let bytes = parseOkLen statHeader
-                 (statContent, bytesRead) <- recvLen s (bytes)
-                 recv s 2 -- Ending CRLF
-                 yamlN <- parseYaml statContent
-                 return $ yamlMapToHMap yamlN
+                 readYamlDict s
 
 -- | Return statistical information about a job.  Keys that can be
 --   expected to be returned are the following:
@@ -441,8 +456,8 @@ genericStats bs cmd = withMVar bs task
 --   See the Beanstalk protocol docs for the definitive list and definitions.
 statsJob :: BeanstalkServer -- ^ Beanstalk server
          -> Int -- ^ ID of job
-         -> IO (M.Map String String) -- ^ Key-value map of job statistics
-statsJob bs jobid = genericStats bs ("stats-job "++(show jobid))
+         -> IO (M.Map B.ByteString B.ByteString) -- ^ Key-value map of job statistics
+statsJob bs jobid = genericStats bs (fromByteString "stats-job " `mappend` fromShow jobid)
 
 -- | Return statistical information about a tube.  Keys that can be
 --   expected to be returned are the following:
@@ -480,22 +495,23 @@ statsJob bs jobid = genericStats bs ("stats-job "++(show jobid))
 --
 --   See the Beanstalk protocol docs for the definitive list and definitions.
 statsTube :: BeanstalkServer -- ^ Beanstalk server
-          -> String -- ^ Name of tube
-          -> IO (M.Map String String) -- ^ Key-value map of tube statistics
-statsTube bs tube = genericStats bs ("stats-tube "++tube)
+          -> B.ByteString -- ^ Name of tube
+          -> IO (M.Map B.ByteString B.ByteString) -- ^ Key-value map of tube statistics
+statsTube bs tube =
+    genericStats bs (fromByteString "stats-tube " `mappend` fromByteString tube)
 
 -- | Print stats to screen in a readable format.
-printStats :: M.Map String String -- ^ Key-value map of statistic names and values
+printStats :: M.Map B.ByteString B.ByteString -- ^ Key-value map of statistic names and values
            -> IO () -- ^ Screen output showing all \"key => value\" pairs
 printStats stats =
     do let kv = M.assocs stats
-       mapM_ (\(k,v) -> putStrLn (k ++ " => " ++ v)) kv
+       mapM_ (\(k,v) -> B.putStr k >> B.putStr " => " >> B.putStrLn v) kv
 
 -- | Pretty print a list.
-printList :: [String] -- ^ List of names
+printList :: [B.ByteString] -- ^ List of names
           -> IO () -- ^ Screen output showing results with prefixed counter
 printList list =
-    do mapM_ (\(n,x) -> putStrLn (" "++(show n)++". "++x)) (zip [1..] (list))
+    do mapM_ (\(n,x) -> putStr (" "++(show n)++". ") >> B.putStrLn x) (zip [1..] (list))
 
 -- | Return statistical information about the server, across all
 --   clients.  Keys that can be expected to be returned are the
@@ -604,34 +620,37 @@ printList list =
 --
 --   See the Beanstalk protocol docs for the definitive list and definitions.
 statsServer :: BeanstalkServer -- ^ Beanstalk server
-            -> IO (M.Map String String) -- ^ Key-value map of server statistics
-statsServer bs = genericStats bs "stats"
+            -> IO (M.Map B.ByteString B.ByteString) -- ^ Key-value map of server statistics
+statsServer bs = genericStats bs (fromByteString "stats")
 
 -- | Pause a tube for a specified time, so that reservations are no longer accepted.
 pauseTube :: BeanstalkServer -- ^ Beanstalk server
-          -> String -- ^ Name of tube to pause
+          -> B.ByteString -- ^ Name of tube to pause
           -> Int -- ^ Number of seconds before reservations are accepted again
           -> IO ()
 pauseTube bs tube delay = withMVar bs task
     where task s =
-              do send s ("pause-tube "++tube++" "++(show delay)++"\r\n")
+              do sendAll s $ toByteString (fromByteString "pause-tube " `mappend`
+                                           fromByteString tube `mappend`
+                                           fromChar ' ' `mappend`
+                                           fromShow delay `mappend` fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
                  return ()
 
 -- | List all existing tubes.
 listTubes :: BeanstalkServer -- ^ Beanstalk server
-          -> IO [String] -- ^ Names of all tubes on the server
+          -> IO [B.ByteString] -- ^ Names of all tubes on the server
 listTubes bs = genericList bs "list-tubes"
 
 -- | List all watched tubes.
 listTubesWatched :: BeanstalkServer -- ^ Beanstalk server
-                 -> IO [String] -- ^ Names of all currently watched tubes
+                 -> IO [B.ByteString] -- ^ Names of all currently watched tubes
 listTubesWatched bs = genericList bs "list-tubes-watched"
 
 -- | List used tube.
 listTubeUsed :: BeanstalkServer -- ^ Beanstalk server
-             -> IO String -- ^ Name of current used tube
+             -> IO B.ByteString -- ^ Name of current used tube
 listTubeUsed bs = withMVar bs task
     where task s =
               do send s ("list-tube-used\r\n")
@@ -640,34 +659,27 @@ listTubeUsed bs = withMVar bs task
                  let tubeName = parseUsedTube response
                  return tubeName
 
-parseUsedTube :: String -> String
+parseUsedTube :: B.ByteString -> B.ByteString
 parseUsedTube input =
-    case (parse usedTubeParser "UsedTubeParser" input) of
-      Right x -> x
-      Left _ -> ""
+    case (parse usedTubeParser input) of
+      Done _ x -> x
+      _        -> ""
 
-nameParser = do initial <- leadingNameParser
-                rest <- many1 (leadingNameParser <|> char '-')
-                return (initial : rest)
-                    where leadingNameParser = alphaNum <|> oneOf "+/;.$_()"
+nameParser = B.cons <$> leadingNameParser <*> followingNameParser
+    where leadingNameParser = P8.satisfy $ P8.inClass "a-zA-Z0-9+/;.$_()"
+          followingNameParser = P.takeWhile $ inClass "-a-zA-Z0-9+/;.$_()"
 
-usedTubeParser = do string "USING "
-                    tube <- nameParser
-                    string "\r\n"
-                    return tube
+usedTubeParser = P.string "USING " *> nameParser <* P.string "\r\n"
 
 -- Essence of list commands that return YAML lists.
-genericList :: BeanstalkServer -> String -> IO [String]
+genericList :: BeanstalkServer -> B.ByteString -> IO [B.ByteString]
 genericList bs cmd = withMVar bs task
     where task s =
-              do send s (cmd++"\r\n")
+              do sendAll s (cmd `B.append` "\r\n")
                  lHeader <- readLine s
                  checkForBeanstalkErrors lHeader
                  let bytes = parseOkLen lHeader
-                 (content, bytesRead) <- recvLen s (bytes)
-                 recv s 2 -- Ending CRLF
-                 yamlN <- parseYaml content
-                 return $ yamlListToHList yamlN
+                 readYamlList s
 
 -- | Count number of jobs in a tube with a state in a given list.
 --   This is not part of the beanstalk protocol spec, so multiple
@@ -675,116 +687,109 @@ genericList bs cmd = withMVar bs task
 --   may not be consistent (it does not represent one snapshot in
 --   time).
 jobCountWithState :: BeanstalkServer -- ^ Beanstalk server
-                   -> String -- ^ Name of tube to inspect
+                   -> B.ByteString -- ^ Name of tube to inspect
                    -> [JobState] -- ^ List of valid states for count
                    -> IO Int -- ^ Number of jobs with a state in the valid list
 jobCountWithState bs tube validStatuses =
     do ts <- statsTube bs tube
        let readyCount = case (elem READY validStatuses) of
-                          True -> read (fromJust (M.lookup "current-jobs-ready" ts))
+                          True -> parseIntBS (fromJust (M.lookup "current-jobs-ready" ts))
                           False -> 0
        let reservedCount = case (elem RESERVED validStatuses) of
-                          True -> read (fromJust (M.lookup "current-jobs-reserved" ts))
+                          True -> parseIntBS (fromJust (M.lookup "current-jobs-reserved" ts))
                           False -> 0
        let delayedCount = case (elem DELAYED validStatuses) of
-                          True -> read (fromJust (M.lookup "current-jobs-delayed" ts))
+                          True -> parseIntBS (fromJust (M.lookup "current-jobs-delayed" ts))
                           False -> 0
        let buriedCount = case (elem BURIED validStatuses) of
-                          True -> read (fromJust (M.lookup "current-jobs-buried" ts))
+                          True -> parseIntBS (fromJust (M.lookup "current-jobs-buried" ts))
                           False -> 0
        return (readyCount+reservedCount+delayedCount+buriedCount)
 
-yamlListToHList :: YamlNode -> [String]
-yamlListToHList y = elems where
-    elist = (n_elem y)
-    ESeq list = elist
-    yelems = map n_elem list
-    elems = map (\(EStr x) -> unpackBuf x) yelems
-
-yamlMapToHMap :: YamlNode -> M.Map String String
-yamlMapToHMap y = M.fromList elems where
-    emap = (n_elem y)
-    EMap maplist = emap -- [(YamlNode,YamlNode)]
-    yelems = map (\(x,y) -> (n_elem x, n_elem y))  maplist
-    elems = map (\(EStr x, EStr y) -> (unpackBuf x, unpackBuf y)) yelems
-
--- Read a single character from socket without handling errors.
-readChar :: Socket -> IO Char
-readChar s = recv s 1 >>= return . head
-
 -- Read up to and including a newline.  Any errors result in a string
 -- starting with "Error: "
-readLine :: Socket -> IO String
+readLine :: Socket -> IO B.ByteString
 readLine s =
-    catch readLine' (\err -> return ("Error: " ++ show err))
+    catch readLine' (\err -> return (B.pack $ "Error: " ++ show err))
         where
-          readLine' = do c <- readChar s
-                         if c == '\n'
-                           then return (c:[])
-                           else do l <- readLine s
-                                   return (c:l)
+          readLine' = readline'' (fromByteString B.empty) >>= return . toByteString
+              where readline'' b = do c <- recv s 1
+                                      if B.head c == '\n'
+                                        then return     (b `mappend` fromByteString c)
+                                        else readline'' (b `mappend` fromByteString c)
 
 -- Parse response from watch/ignore command to determine how many
 -- tubes are currently being watched.
-parseWatching :: String -> Int
+-- Parse response from watch/ignore command to determine how many
+-- tubes are currently being watched.
+parseWatching :: B.ByteString -> Int
 parseWatching input =
-    case (parse (string "WATCHING " >> many1 digit) "WatchParser" input) of
-      Right x -> read x
-      Left _ -> 0
+    case (parse (P.string "WATCHING " *> P8.decimal) input) of
+      Done _ x -> x
+      _        -> 0
 
 -- Parse response from put command.
-parsePut :: String -> (JobState, Int)
+parsePut :: B.ByteString -> (JobState, Int)
 parsePut input =
-    case (parse putParser "PutParser" input) of
-      Right x -> x
-      Left _ -> (READY, 0) -- Error
+    case (parse putParser input) of
+      Done _ x -> x
+      _        -> (READY, 0)  -- Error
 
-putParser = do stateStr <- many1 letter
-               char ' '
-               jobid <- many1 digit
-               let state = case stateStr of
-                             "BURIED" -> BURIED
-                             _ -> READY
-               return (state, read jobid)
+putParser = (,) <$> (parseStateStr <$> takeTill (==32) <* P8.space) <*> P8.decimal
+    where parseStateStr "BURIED" = BURIED
+          parseStateStr _        = READY
 
 -- Get Job ID and size.
-parseReserve :: String -> (String,Int)
+parseReserve :: B.ByteString -> (Int,Int)
 parseReserve input =
-    case (parse reservedParser "ReservedParser" input) of
-      Right (x,y) -> (x, read y)
-      Left _ -> ("",0)
+    case (parse reservedParser input) of
+      Done _ x -> x
+      _        -> (-1, 0)  -- Error
 
--- Parse response from reserve command, including job id and bytes of body
--- to come next.
-reservedParser :: GenParser Char st (String,String)
-reservedParser = do string "RESERVED"
-                    char ' '
-                    x <- many1 digit
-                    char ' '
-                    y <- many1 digit
-                    return (x,y)
+reservedParser = P.string "RESERVED " *> ((,) <$> P8.decimal <* P8.space <*> P8.decimal)
 
 -- Get number of bytes from an OK <bytes> response string.
-parseOkLen :: String -> Int
+parseOkLen :: B.ByteString -> Int
 parseOkLen input =
-        case (parse okLenParser "okLenParser" input) of
-          Right len -> read len
-          Left err -> 0
-
--- Parser for first line of stats for data length indicator.
-okLenParser :: GenParser Char st String
-okLenParser = string "OK " >> many1 digit
+        case (parse (P.string "OK " *> P8.decimal) input) of
+          Done _ x -> x
+          _        -> 0
 
 -- Get job id and number of bytes from FOUND response string.
-parseFoundIdLen :: String -> (Int,Int)
+parseFoundIdLen :: B.ByteString -> (Int,Int)
 parseFoundIdLen input =
-    case (parse foundIdLenParser "FoundIdLenParser" input) of
-      Right x -> x
-      Left _ -> (0,0)
+    case (parse foundIdLenParser input) of
+      Done _ x -> x
+      _        -> (0,0)
 
-foundIdLenParser :: GenParser Char st (Int,Int)
-foundIdLenParser = do string "FOUND "
-                      jobid <- many1 digit
-                      string " "
-                      bytes <- many1 digit
-                      return (read jobid, read bytes)
+foundIdLenParser = P.string "FOUND " *> ((,) <$> P8.decimal <* P8.space <*> P8.decimal)
+
+-- Read a YAML list, and parse it.
+readYamlList s = do result <- parseWith (recv s 1024) yamlListParser ""
+                    case result of
+                      Done _ x -> return x
+                      _        -> return []
+
+yamlListParser = start_line *> many list_item <* P.string "\r\n"
+    where start_line = P.string "---" *> P8.endOfLine
+          list_item = P.string "- " *> takeTill P8.isEndOfLine <* P8.endOfLine
+
+-- Read a YAML dict, parse it, and return a Map
+readYamlDict s = do result <- parseWith (recv s 1024) yamlDictParser ""
+                    case result of
+                      Done _ x -> return x
+                      _        -> return M.empty
+
+yamlDictParser = start_line *> (M.fromList <$> many dict_item) <* P.string "\r\n"
+    where start_line = P.string "---" *> P8.endOfLine
+          dict_item = (,) <$> dict_key <*> dict_value
+          dict_key = takeTill colon_or_newline <* P.string ": "
+          colon_or_newline byte = byte == 58 || P8.isEndOfLine byte
+          dict_value = takeTill P8.isEndOfLine <* P8.endOfLine
+
+-- Parse an integer ByteString
+parseIntBS :: B.ByteString -> Int
+parseIntBS input =
+    case feed (parse P8.decimal input) "" of
+      Done _ x -> x
+      _        -> error "Beanstalk.parseIntBS: no parse"

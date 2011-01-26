@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Beanstalk Tests
@@ -25,6 +26,7 @@ import qualified Data.Map as M
 import qualified Control.Exception as E
 import Control.Monad
 import Control.Concurrent(threadDelay)
+import qualified Data.ByteString.Char8 as B
 
 bs_host = "localhost"
 bs_port = "11300"
@@ -137,7 +139,7 @@ putReserveTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  randString <- randomName
-                 let body = "My test job body, " ++ randString
+                 let body = "My test job body, " `B.append` randString
                  (_,put_job_id) <- putJob bs 1 0 60 body
                  rsv_job <- reserveJob bs
                  assertEqual "Reserved job ID should match what was put" put_job_id (job_id rsv_job)
@@ -151,7 +153,7 @@ putReserveWithTimeoutTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  randString <- randomName
-                 let body = "My test job body, " ++ randString
+                 let body = "My test job body, " `B.append` randString
                  (_,put_job_id) <- putJob bs 1 0 60 body
                  rsv_job <- reserveJobWithTimeout bs 2
                  assertEqual "Reserved job should match job that was just put"
@@ -163,9 +165,9 @@ peekTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  randString <- randomName
-                 let body = "My test job body, " ++ randString
+                 let body = "My test job body, " `B.append` randString
                  (_,put_job_id) <- putJob bs 1 0 60 body
-                 let next_body = "My test job body, " ++ randString
+                 let next_body = "My test job body, " `B.append` randString
                  (_,put_next_job_id) <- putJob bs 1 0 60 next_body
                  peeked_job <- peekJob bs put_job_id
                  assertEqual "Peeked job id should match job id that was just put"
@@ -183,7 +185,7 @@ kickDelayTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  randString <- randomName
-                 let body = "My test job body, " ++ randString
+                 let body = "My test job body, " `B.append` randString
                  (_,put_job_id) <- putJob bs 1 5 60 body
                  kicked <- kickJobs bs 1
                  assertEqual "Kick should indicate one job kicked" 1 kicked
@@ -196,7 +198,7 @@ releaseTest =
                  assertJobsCount bs tt [READY] 0 "New tube has no jobs"
                  -- Put a job on the tube
                  randString <- randomName
-                 let body = "My test job body, " ++ randString
+                 let body = "My test job body, " `B.append` randString
                  (_,put_job_id) <- putJob bs 1 0 60 body
                  assertJobsCount bs tt [READY] 1 "Put adds job to tube"
                  -- Reserve the job
@@ -252,7 +254,7 @@ peekJobTest =
               do (bs, tt) <- connectAndSelectRandomTube
                  assertJobsCount bs tt [READY] 0 "New tube has no jobs"
                  randString <- randomName
-                 let jobcontent = "new job "++randString
+                 let jobcontent = "new job " `B.append` randString
                  (_,put_job_id) <- putJob bs 1 0 60 jobcontent
                  assertJobsCount bs tt [READY] 1 "Put creates new ready job"
                  job <- peekJob bs put_job_id
@@ -296,8 +298,8 @@ statsJobTest =
                  let priority = 99
                  (job_state ,put_job_id) <- putJob bs priority 0 60 "new job"
                  job_stats <- statsJob bs put_job_id
-                 assertEqual "Job ID matches" put_job_id (read (fromJust (M.lookup "id" job_stats)))
-                 assertEqual "Job priority matches" priority (read (fromJust (M.lookup "pri" job_stats)))
+                 assertEqual "Job ID matches" put_job_id (read $ B.unpack (fromJust (M.lookup "id" job_stats)))
+                 assertEqual "Job priority matches" priority (read $ B.unpack (fromJust (M.lookup "pri" job_stats)))
              )
 
 -- Test finding server statistics.
@@ -305,7 +307,7 @@ statsTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  stats <- statsServer bs
-                 assertBool "More than 1 job has been created" (1 < (read (fromJust (M.lookup "total-jobs" stats))))
+                 assertBool "More than 1 job has been created" (1 < (read $ B.unpack (fromJust (M.lookup "total-jobs" stats))))
              )
 
 -- Test listing all tubes for the server.
@@ -347,8 +349,8 @@ touchJobTest =
                  jobstat_before <- statsJob bs jobid
                  touchJob bs jobid
                  jobstat_after <- statsJob bs jobid
-                 let ttr_before = ((read (fromJust (M.lookup "time-left" jobstat_before)))::Int)
-                 let ttr_after = ((read (fromJust (M.lookup "time-left" jobstat_after)))::Int)
+                 let ttr_before = ((read $ B.unpack (fromJust (M.lookup "time-left" jobstat_before)))::Int)
+                 let ttr_after = ((read $ B.unpack (fromJust (M.lookup "time-left" jobstat_after)))::Int)
                  assertBool "TTR extended by touch" (ttr_after >= ttr_before)
              )
 
@@ -359,7 +361,7 @@ pauseTubeTest =
                  tubestat_before <- statsTube bs tt
                  pauseTube bs tt 1000
                  tubestat_after <- statsTube bs tt
-                 let paused_rem = ((read (fromJust (M.lookup "pause-time-left" tubestat_after)))::Int)
+                 let paused_rem = ((read $ B.unpack (fromJust (M.lookup "pause-time-left" tubestat_after)))::Int)
                  -- Check that at least 990 seconds still remains of the
                  -- original 1000 seconds we paused the tube for.
                  assertBool "Tube has at least 990 seconds before un-pausing" (paused_rem > 990)
@@ -380,7 +382,7 @@ isBadFormatxceptionTest =
     TestCase (
               do (bs, tt) <- connectAndSelectRandomTube
                  rname <- randomName
-                 e <- E.tryJust (guard . isBadFormatException) (statsTube bs ("-"++rname))
+                 e <- E.tryJust (guard . isBadFormatException) (statsTube bs ("-" `B.append` rname))
                  case e of
                    Right _ -> assertFailure "Using tube name starting with hyphen should fail"
                    Left _ -> return ()
@@ -448,7 +450,7 @@ disconnectTest =
 
 -- Assert a number of jobs on a given tube with one of the states
 -- listed.
-assertJobsCount :: BeanstalkServer -> String -> [JobState] -> Int -> String -> IO ()
+assertJobsCount :: BeanstalkServer -> B.ByteString -> [JobState] -> Int -> String -> IO ()
 assertJobsCount bs tube states jobs msg =
     do ts <- statsTube bs tube
        jobsReady <- jobCountWithState bs tube states
@@ -457,7 +459,7 @@ assertJobsCount bs tube states jobs msg =
 
 -- Configure a new beanstalkd connection to use&watch a single tube
 -- with a random name.
-connectAndSelectRandomTube :: IO (BeanstalkServer, String)
+connectAndSelectRandomTube :: IO (BeanstalkServer, B.ByteString)
 connectAndSelectRandomTube =
     do bs <- connectBeanstalk bs_host bs_port
        tt <- randomName
@@ -467,7 +469,7 @@ connectAndSelectRandomTube =
        return (bs, tt)
 
 -- Generate random tube names for test separation.
-randomName :: IO String
+randomName :: IO B.ByteString
 randomName =
     do rdata <- randomIO :: IO Integer
-       return (show (abs rdata))
+       return $ B.pack (show (abs rdata))
