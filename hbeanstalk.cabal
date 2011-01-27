@@ -1,5 +1,5 @@
 Name:           hbeanstalk
-Version:        1.0.0.0
+Version:        0.2
 License:        BSD3
 License-file:   LICENSE
 Cabal-Version: >= 1.6
