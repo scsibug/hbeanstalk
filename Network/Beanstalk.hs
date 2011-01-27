@@ -29,16 +29,12 @@ module Network.Beanstalk (
   Job(..), BeanstalkServer, JobState(..), BeanstalkException(..)
   ) where
 
-import Data.Bits
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import Network.Socket.ByteString
-import Data.List
-import System.IO
 import Data.Typeable
 import qualified Data.Map as M
 import qualified Control.Exception as E
 import Data.Maybe
-import Control.Monad
 import Control.Concurrent.MVar
 import Control.Applicative hiding (many)
 import Data.Attoparsec as P
@@ -46,7 +42,6 @@ import qualified Data.Attoparsec.Char8 as P8
 import qualified Data.ByteString.Char8 as B
 import Blaze.ByteString.Builder
 import Blaze.ByteString.Builder.Char8
-import Blaze.ByteString.Builder.ByteString
 import Data.Monoid (mappend)
 
 -- | Beanstalk Server, wrapped in an 'MVar' for synchronizing access
@@ -192,16 +187,16 @@ putJob :: BeanstalkServer -- ^ Beanstalk server
              --   value is 1.
        -> B.ByteString -- ^ Job body.
        -> IO (JobState, Int) -- ^ State of the newly created job and its ID
-putJob bs priority delay ttr job_body = withMVar bs task
+putJob bs priority delay ttr jobBody = withMVar bs task
     where task s =
-              do let job_size = B.length job_body
+              do let job_size = B.length jobBody
                  sendAll s $ toByteString (fromByteString "put " `mappend`
                                            fromShow priority `mappend` fromChar ' ' `mappend`
                                            fromShow delay `mappend` fromChar ' ' `mappend`
                                            fromShow ttr `mappend` fromChar ' ' `mappend`
                                            fromShow job_size `mappend`
                                            fromByteString "\r\n" `mappend`
-                                           fromByteString job_body `mappend`
+                                           fromByteString jobBody `mappend`
                                            fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
@@ -220,7 +215,7 @@ reserveJob bs = withMVar bs task
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
                  jobContent <- recvBytes s bytes
-                 recvBytes s 2 -- Ending CRLF
+                 _ <- recvBytes s 2 -- Ending CRLF
                  return (Job jobid jobContent)
 
 -- | Reserve a job from the watched tube list, blocking for the specified number
@@ -242,7 +237,7 @@ reserveJobWithTimeout bs seconds = withMVar bs task
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseReserve response
                  jobContent <- recvBytes s bytes
-                 recvBytes s 2 -- Ending CRLF
+                 _ <- recvBytes s 2 -- Ending CRLF
                  return (Job jobid jobContent)
 
 -- | Delete a job to indicate that it has been completed.  If the job
@@ -378,7 +373,7 @@ genericPeek bs cmd = withMVar bs task
                  checkForBeanstalkErrors response
                  let (jobid, bytes) = parseFoundIdLen response
                  content <- recvBytes s bytes
-                 recvBytes s 2 -- Ending CRLF
+                 _ <- recvBytes s 2 -- Ending CRLF
                  return (Job jobid content)
 
 -- | Update the Time-To-Run (TTR) value for a job, giving a worker more time before job expiry.
@@ -511,7 +506,7 @@ printStats stats =
 printList :: [B.ByteString] -- ^ List of names
           -> IO () -- ^ Screen output showing results with prefixed counter
 printList list =
-    do mapM_ (\(n,x) -> putStr (" "++(show n)++". ") >> B.putStrLn x) (zip [1..] (list))
+    do mapM_ (\(n,x) -> putStr (" "++(show n)++". ") >> B.putStrLn x) (zip [(1::Int)..] (list))
 
 -- | Return statistical information about the server, across all
 --   clients.  Keys that can be expected to be returned are the
@@ -665,10 +660,12 @@ parseUsedTube input =
       Done _ x -> x
       _        -> ""
 
+nameParser :: Parser B.ByteString
 nameParser = B.cons <$> leadingNameParser <*> followingNameParser
     where leadingNameParser = P8.satisfy $ P8.inClass "a-zA-Z0-9+/;.$_()"
           followingNameParser = P.takeWhile $ inClass "-a-zA-Z0-9+/;.$_()"
 
+usedTubeParser :: Parser B.ByteString
 usedTubeParser = P.string "USING " *> nameParser <* P.string "\r\n"
 
 -- Essence of list commands that return YAML lists.
@@ -735,6 +732,7 @@ parsePut input =
       Done _ x -> x
       _        -> (READY, 0)  -- Error
 
+putParser :: Parser (JobState, Int)
 putParser = (,) <$> (parseStateStr <$> takeTill (==32) <* P8.space) <*> P8.decimal
     where parseStateStr "BURIED" = BURIED
           parseStateStr _        = READY
@@ -746,14 +744,15 @@ parseReserve input =
       Done _ x -> x
       _        -> (-1, 0)  -- Error
 
+reservedParser :: Parser (Int, Int)
 reservedParser = P.string "RESERVED " *> ((,) <$> P8.decimal <* P8.space <*> P8.decimal)
 
 -- Get number of bytes from an OK <bytes> response string.
 parseOkLen :: B.ByteString -> Int
 parseOkLen input =
-        case (parse (P.string "OK " *> P8.decimal) input) of
-          Done _ x -> x
-          _        -> 0
+    case (parse (P.string "OK " *> P8.decimal) input) of
+      Done _ x -> x
+      _        -> 0
 
 -- Get job id and number of bytes from FOUND response string.
 parseFoundIdLen :: B.ByteString -> (Int,Int)
@@ -762,24 +761,29 @@ parseFoundIdLen input =
       Done _ x -> x
       _        -> (0,0)
 
+foundIdLenParser :: Parser (Int, Int)
 foundIdLenParser = P.string "FOUND " *> ((,) <$> P8.decimal <* P8.space <*> P8.decimal)
 
 -- Read a YAML list, and parse it.
+readYamlList :: Socket -> IO [B.ByteString]
 readYamlList s = do result <- parseWith (recv s 1024) yamlListParser ""
                     case result of
                       Done _ x -> return x
                       _        -> return []
 
+yamlListParser :: Parser [B.ByteString]
 yamlListParser = start_line *> many list_item <* P.string "\r\n"
     where start_line = P.string "---" *> P8.endOfLine
           list_item = P.string "- " *> takeTill P8.isEndOfLine <* P8.endOfLine
 
 -- Read a YAML dict, parse it, and return a Map
+readYamlDict :: Socket -> IO (M.Map B.ByteString B.ByteString)
 readYamlDict s = do result <- parseWith (recv s 1024) yamlDictParser ""
                     case result of
                       Done _ x -> return x
                       _        -> return M.empty
 
+yamlDictParser :: Parser (M.Map B.ByteString B.ByteString)
 yamlDictParser = start_line *> (M.fromList <$> many dict_item) <* P.string "\r\n"
     where start_line = P.string "---" *> P8.endOfLine
           dict_item = (,) <$> dict_key <*> dict_value
