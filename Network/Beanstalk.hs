@@ -24,7 +24,7 @@ module Network.Beanstalk (
   -- * Exception Predicates
   isNotFoundException, isBadFormatException, isTimedOutException,
   isOutOfMemoryException, isInternalErrorException, isJobTooBigException,
-  isDeadlineSoonException, isNotIgnoredException,
+  isDeadlineSoonException, isNotIgnoredException, isDrainingException,
   -- * Data Types
   Job(..), BeanstalkServer, JobState(..), BeanstalkException(..)
   ) where
