@@ -799,11 +799,11 @@ parseIntBS input =
 recvBytes :: Socket -> Int -> IO B.ByteString
 recvBytes s bytes = recv' (fromByteString "") bytes
     where recv' b 0 = return $ toByteString b
-          recv' b n = do 
+          recv' b n = do
             chunk <- recv s (min n 1024)
             let n' = n - B.length chunk
             if n' == n
-              then ioError $ userError $ "Could not read " ++ (show bytes) ++ 
+              then ioError $ userError $ "Could not read " ++ (show bytes) ++
                        " bytes from beanstalkd; server disconnect."
               else
                   recv' (b `mappend` fromByteString chunk) n'
