@@ -419,7 +419,6 @@ genericStats bs cmd = withMVar bs task
               do sendAll s $ toByteString (cmd `mappend` fromByteString "\r\n")
                  statHeader <- readLine s
                  checkForBeanstalkErrors statHeader
-                 let bytes = parseOkLen statHeader
                  readYamlDict s
 
 -- | Return statistical information about a job.  Keys that can be
@@ -675,7 +674,6 @@ genericList bs cmd = withMVar bs task
               do sendAll s (cmd `B.append` "\r\n")
                  lHeader <- readLine s
                  checkForBeanstalkErrors lHeader
-                 let bytes = parseOkLen lHeader
                  readYamlList s
 
 -- | Count number of jobs in a tube with a state in a given list.
@@ -746,13 +744,6 @@ parseReserve input =
 
 reservedParser :: Parser (Int, Int)
 reservedParser = P.string "RESERVED " *> ((,) <$> P8.decimal <* P8.space <*> P8.decimal)
-
--- Get number of bytes from an OK <bytes> response string.
-parseOkLen :: B.ByteString -> Int
-parseOkLen input =
-    case (parse (P.string "OK " *> P8.decimal) input) of
-      Done _ x -> x
-      _        -> 0
 
 -- Get job id and number of bytes from FOUND response string.
 parseFoundIdLen :: B.ByteString -> (Int,Int)
