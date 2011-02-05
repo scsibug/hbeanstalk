@@ -701,17 +701,14 @@ jobCountWithState bs tube validStatuses =
                           False -> 0
        return (readyCount+reservedCount+delayedCount+buriedCount)
 
--- Read up to and including a newline.  Any errors result in a string
--- starting with "Error: "
+-- Read up to and including a newline.
 readLine :: Socket -> IO B.ByteString
 readLine s =
-    catch readLine' (\err -> return (B.pack $ "Error: " ++ show err))
-        where
-          readLine' = readline'' (fromByteString B.empty) >>= return . toByteString
-              where readline'' b = do c <- recvBytes s 1
-                                      if B.head c == '\n'
-                                        then return     (b `mappend` fromByteString c)
-                                        else readline'' (b `mappend` fromByteString c)
+    readLine' (fromByteString B.empty) >>= return . toByteString
+        where readLine' b = do c <- recvBytes s 1
+                               if B.head c == '\n'
+                                 then return    (b `mappend` fromByteString c)
+                                 else readLine' (b `mappend` fromByteString c)
 
 -- Parse response from watch/ignore command to determine how many
 -- tubes are currently being watched.
