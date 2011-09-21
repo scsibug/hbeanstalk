@@ -25,8 +25,8 @@ source-repository head
 Library
   ghc-options: -Wall
   Build-depends:  base >= 4 && < 5, network, containers >= 0.3.0.0,
-                  blaze-builder >= 0.2.1.0, network-bytestring >= 0.1.2.0,
-                  bytestring >= 0.9.1.7, attoparsec >= 0.8.3.0
+                  blaze-builder >= 0.2.1.0, bytestring >= 0.9.1.7,
+                  attoparsec >= 0.8.3.0
 
   Exposed-modules:
         Network.Beanstalk
