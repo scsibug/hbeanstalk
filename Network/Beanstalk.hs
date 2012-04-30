@@ -36,7 +36,7 @@ import qualified Data.Map as M
 import qualified Control.Exception as E
 import Data.Maybe
 import Control.Concurrent.MVar
-import Control.Applicative hiding (many)
+import Control.Applicative
 import Data.Attoparsec as P
 import qualified Data.Attoparsec.Char8 as P8
 import qualified Data.ByteString.Char8 as B
