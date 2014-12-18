@@ -37,8 +37,8 @@ import qualified Control.Exception as E
 import Data.Maybe
 import Control.Concurrent.MVar
 import Control.Applicative
-import Data.Attoparsec as P
-import qualified Data.Attoparsec.Char8 as P8
+import Data.Attoparsec.ByteString as P
+import qualified Data.Attoparsec.ByteString.Char8 as P8
 import qualified Data.ByteString.Char8 as B
 import Blaze.ByteString.Builder
 import Blaze.ByteString.Builder.Char8
@@ -70,7 +70,7 @@ data JobState = -- | Ready, retrievable with 'reserveJob'
                 BURIED
               deriving (Show, Read, Eq)
 
--- | Exceptions generated from the beanstalkd server
+-- | Exceptions generated from the beanstalkd server or hbeanstalk client
 data BeanstalkException =
     -- | Job does not exist, or is not reserved by this client.
     NotFoundException |
@@ -104,7 +104,10 @@ data BeanstalkException =
     TimedOutException |
     -- | Client attempted to ignore the only tube in its watch list (clients
     --   must always watch one or more tubes).
-    NotIgnoredException
+    NotIgnoredException |
+    -- | Hbeanstalk couldn't parse response properly. If this happens
+    -- please report to <https://github.com/scsibug/hbeanstalk/issues>
+    ParseError String
     deriving (Show, Typeable, Eq)
 
 instance E.Exception BeanstalkException
@@ -213,7 +216,7 @@ reserveJob bs = withMVar bs task
               do sendAll s "reserve\r\n"
                  response <- readLine s
                  checkForBeanstalkErrors response
-                 let (jobid, bytes) = parseReserve response
+                 let (jobid, bytes) = parseReserveThrowing response
                  jobContent <- recvBytes s bytes
                  _ <- recvBytes s 2 -- Ending CRLF
                  return (Job jobid jobContent)
@@ -235,7 +238,7 @@ reserveJobWithTimeout bs seconds = withMVar bs task
                                            fromByteString "\r\n")
                  response <- readLine s
                  checkForBeanstalkErrors response
-                 let (jobid, bytes) = parseReserve response
+                 let (jobid, bytes) = parseReserveThrowing response
                  jobContent <- recvBytes s bytes
                  _ <- recvBytes s 2 -- Ending CRLF
                  return (Job jobid jobContent)
@@ -732,12 +735,21 @@ putParser = (,) <$> (parseStateStr <$> takeTill (==32) <* P8.space) <*> P8.decim
     where parseStateStr "BURIED" = BURIED
           parseStateStr _        = READY
 
--- Get Job ID and size.
-parseReserve :: B.ByteString -> (Int,Int)
+parseReserve :: B.ByteString -> Either String (Int, Int)
 parseReserve input =
     case (parse reservedParser input) of
-      Done _ x -> x
-      _        -> (-1, 0)  -- Error
+      Done _ x -> Right x
+      Partial _ -> Left (r ++ " Parsing RESERVED message failed with "
+                         ++ "Partial attoparsec result.")
+      Fail i sx e -> Left (r ++ " Parsing RESERVED message failed: "
+                           ++ e ++ ". "
+                           ++ "Non-consumed input: " ++ B.unpack i ++ ". "
+                           ++ "List of error contexts: " ++ show sx)
+  where
+    r = "Internal HBeanstalk error happened. Please report it to https://github.com/scsibug/hbeanstalk/issues."
+
+parseReserveThrowing ::B.ByteString -> (Int, Int)
+parseReserveThrowing input = either (E.throw . ParseError) id (parseReserve input)
 
 reservedParser :: Parser (Int, Int)
 reservedParser = P.string "RESERVED " *> ((,) <$> P8.decimal <* P8.space <*> P8.decimal)
