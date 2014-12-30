@@ -25,6 +25,7 @@ module Network.Beanstalk (
   isNotFoundException, isBadFormatException, isTimedOutException,
   isOutOfMemoryException, isInternalErrorException, isJobTooBigException,
   isDeadlineSoonException, isNotIgnoredException, isDrainingException,
+  isParseError,
   -- * Data Types
   Job(..), BeanstalkServer, JobState(..), BeanstalkException(..)
   ) where
@@ -147,6 +148,11 @@ isTimedOutException = (==) TimedOutException
 -- | Predicate to detect 'NotIgnoredException'
 isNotIgnoredException :: BeanstalkException -> Bool
 isNotIgnoredException = (==) NotIgnoredException
+
+-- | Predicate to detect 'ParseError'
+isParseError :: BeanstalkException -> Bool
+isParseError (ParseError _) = True
+isParseError _ = False
 
 -- | Connect to a beanstalkd server.
 connectBeanstalk :: HostName -- ^ Hostname of beanstalkd server
