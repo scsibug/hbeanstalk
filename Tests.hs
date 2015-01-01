@@ -16,7 +16,6 @@ module Main(main) where
 
 import Network.Beanstalk
 import Control.Exception(finally)
-import IO(bracket)
 import Control.Concurrent.MVar
 import Network.Socket
 import Test.HUnit

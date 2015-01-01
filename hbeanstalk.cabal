@@ -2,7 +2,7 @@ Name:           hbeanstalk
 Version:        0.2.4
 License:        BSD3
 License-file:   LICENSE
-Cabal-Version: >= 1.6
+Cabal-Version: >= 1.10
 Copyright:
   Copyright (c) 2010, Greg Heartsfield
 Author:         Greg Heartsfield <scsibug@imap.cc>
@@ -23,6 +23,7 @@ source-repository head
   location: git://github.com/scsibug/hbeanstalk.git
 
 Library
+  default-language: Haskell2010
   ghc-options: -Wall
   Build-depends:  base >= 4 && < 5, network >= 2.3, containers >= 0.3.0.0,
                   blaze-builder >= 0.2.1.0, bytestring >= 0.9.1.7,
@@ -30,3 +31,17 @@ Library
 
   Exposed-modules:
         Network.Beanstalk
+
+Test-suite test
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Tests.hs
+  build-depends: base
+               , attoparsec
+               , HUnit
+               , blaze-builder
+               , bytestring
+               , containers
+               , hbeanstalk
+               , network
+               , random
