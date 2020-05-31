@@ -175,7 +175,7 @@ connectBeanstalk hostname port =
 disconnectBeanstalk :: BeanstalkServer -- ^ Beanstalk server
                     -> IO ()
 disconnectBeanstalk bs = withMVar bs task
-    where task s = sClose s
+    where task s = close s
 
 -- | Put a new job on the current tube that was selected with useTube.
 -- Specify numeric priority, delay before becoming active, a limit
